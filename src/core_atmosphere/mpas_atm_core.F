@@ -35,6 +35,9 @@ module atm_core
       use mpas_attlist, only : mpas_modify_att
       use mpas_string_utils, only : mpas_string_replace
       use mpas_atm_halos, only: atm_build_halo_groups, exchange_halo_group
+#ifdef DO_CHEMISTRY
+      use mpas_atm_chemistry, only: chemistry_init
+#endif
 
       implicit none
 
@@ -281,6 +284,13 @@ module atm_core
       ! Prepare the dynamics for integration
       !
       call mpas_atm_dynamics_init(domain)
+
+      !
+      ! Initialize the chemistry package
+      !
+#ifdef DO_CHEMISTRY
+      call chemistry_init(domain % blocklist % configs, domain % blocklist % dimensions)
+#endif
 
    end function atm_core_init
 
@@ -973,8 +983,11 @@ module atm_core
       use mpas_atmphys_manager
       use mpas_atmphys_update
 #endif
+#ifdef DO_CHEMISTRY
+      use mpas_atm_chemistry, only: chemistry_step
+#endif
       use mpas_atm_halos, only: exchange_halo_group
-   
+
       implicit none
    
       type (domain_type), intent(inout) :: domain 
@@ -1006,6 +1019,10 @@ module atm_core
       endif
 #endif
 
+#ifdef DO_CHEMISTRY
+      call chemistry_step()
+#endif
+
       call atm_timestep(domain, dt, currTime, itimestep, exchange_halo_group)
 
    end subroutine atm_do_timestep
@@ -1024,6 +1041,10 @@ module atm_core
       use mpas_atmphys_finalize
 #endif
 
+#ifdef DO_CHEMISTRY
+      use mpas_atm_chemistry, only: chemistry_finalize
+#endif
+
       implicit none
    
       type (domain_type), intent(inout) :: domain
@@ -1039,6 +1060,13 @@ module atm_core
       ! Finalize the dynamics
       !
       call mpas_atm_dynamics_finalize(domain)
+
+      !
+      ! Finalize chemistry
+      !
+#ifdef DO_CHEMISTRY
+      call chemistry_finalize()
+#endif
 
       call mpas_atm_diag_cleanup()
 
