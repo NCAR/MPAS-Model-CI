@@ -51,7 +51,8 @@ jobs:
 
 
     name: Build MPAS-A
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
+    runs-on: CIRRUS-4x8-gpu
     defaults:
       run:
         shell: bash -elo pipefail {0}
