@@ -62,6 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: feature-ci
           submodules: 'true'
           fetch-depth: 0
 
@@ -149,6 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: feature-ci
           submodules: 'true'
           fetch-depth: 0
 
