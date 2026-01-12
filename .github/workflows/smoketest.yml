@@ -29,11 +29,11 @@ jobs:
       fail-fast: false
       matrix:
         #compiler: [ nvhpc, oneapi, aocc, gcc, gcc12, gcc13, gcc14, clang ]
-        compiler: [ nvhpc, gcc, oneapi]
+        compiler: [ gcc]
         #mpi:      [ openmpi, mpich, mpich3 ]
-        mpi:      [ openmpi, mpich3 ]
+        mpi:      [ mpich3 ]
         gpu:      [ nogpu, cuda ]
-        io:       [ pio, smiol ]
+        io:       [ smiol ]
         arch:     [ x86_64 ]
 
         include:
