@@ -123,7 +123,7 @@ jobs:
         compiler: [ nvhpc, gcc ]
         #mpi:      [ openmpi, mpich, mpich3 ]
         mpi:      [ mpich3 ]
-        gpu:      [ nogpu ]
+        gpu:      [ nogpu, cuda ]
         io:       [ pio, smiol ]
         arch:     [ x86_64 ]
         num_procs: [ 1, 4 ]
