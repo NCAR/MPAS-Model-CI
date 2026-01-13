@@ -1,4 +1,4 @@
-name: (GA, cisldev) - Build MPAS-A and run 240km test case
+name: (CIRRUS, cisldev) - Build MPAS-A and run 240km test case
 
 # This workflow is used to build and run MPAS-A inside NCAR HPC development containers.
 # It's adapted from Ben Kirk's workflows building & testing dev containers with github actions
@@ -51,8 +51,8 @@ jobs:
 
 
     name: Build MPAS-A
-    runs-on: ubuntu-latest
-    #runs-on: CIRRUS-4x8-gpu
+    #runs-on: ubuntu-latest
+    runs-on: CIRRUS-4x8-gpu
     defaults:
       run:
         shell: bash -elo pipefail {0}
@@ -139,8 +139,8 @@ jobs:
             extra_io_args: 'export PIO_ROOT=${PIO_ROOT:-/container/pio}; export USE_PIO2=true'
 
     needs: build-run-mpas
-    runs-on: ubuntu-latest
-    #runs-on: CIRRUS-4x8-gpu
+    #runs-on: ubuntu-latest
+    runs-on: CIRRUS-4x8-gpu
     defaults:
       run:
         shell: bash -elo pipefail {0}
@@ -207,9 +207,11 @@ jobs:
           name: mpas_240km_${{ matrix.num_procs }}rank_logs_${{ matrix.compiler }}_${{ matrix.mpi }}_${{ matrix.gpu }}_${{ matrix.io }}
           path: |
             240km_${{ matrix.num_procs }}/log.*
-      - name: Upload restart files
-        uses: actions/upload-artifact@v4
-        with:
-          name: mpas_240km_${{ matrix.num_procs }}rank_restart_${{ matrix.compiler }}_${{ matrix.mpi }}_${{ matrix.gpu }}_${{ matrix.io }}
-          path: |
-            240km_${{ matrix.num_procs }}/restart.*
+      
+      # SKIP this step for now, not sure how artifacts work on CIRRUS
+      #- name: Upload restart files
+      #  uses: actions/upload-artifact@v4
+      #  with:
+      #    name: mpas_240km_${{ matrix.num_procs }}rank_restart_${{ matrix.compiler }}_${{ matrix.mpi }}_${{ matrix.gpu }}_${{ matrix.io }}
+      #    path: |
+      #      240km_${{ matrix.num_procs }}/restart.*
