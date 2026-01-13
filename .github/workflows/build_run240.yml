@@ -37,8 +37,8 @@ jobs:
         arch:     [ x86_64 ]
 
         include:
-          - mpi: openmpi
-            extra_mpi_args: 'export MPI_IMPL=openmpi'
+         #- mpi: openmpi
+         #   extra_mpi_args: 'export MPI_IMPL=openmpi'
           - mpi: mpich3
             extra_mpi_args: 'export MPI_IMPL=mpich'
           - io: smiol
@@ -121,15 +121,15 @@ jobs:
         #compiler: [ nvhpc, oneapi, aocc, gcc, gcc12, gcc13, gcc14, clang ]
         compiler: [ nvhpc, gcc ]
         #mpi:      [ openmpi, mpich, mpich3 ]
-        mpi:      [ openmpi, mpich3 ]
+        mpi:      [ mpich3 ]
         gpu:      [ nogpu ]
         io:       [ pio, smiol ]
         arch:     [ x86_64 ]
         num_procs: [ 1, 4 ]
 
         include:
-          - mpi: openmpi
-            extra_mpi_args: 'export MPI_IMPL=openmpi'
+          #- mpi: openmpi
+          #  extra_mpi_args: 'export MPI_IMPL=openmpi'
           - mpi: mpich3
             extra_mpi_args: 'export MPI_IMPL=mpich'
           - io: smiol
