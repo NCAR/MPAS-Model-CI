@@ -152,7 +152,7 @@ jobs:
             if [ ! -f "${IC_FILE}" ]; then
               IC_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
             fi
-            python .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${MEMBER}
+            python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${MEMBER}
 
             # Configure namelist
             cd "${RUNDIR}"

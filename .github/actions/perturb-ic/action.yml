@@ -28,7 +28,7 @@ runs:
     - name: Perturb theta field
       shell: bash
       run: |
-        python ${{ github.action_path }}/perturb_theta.py \
+        python3 ${{ github.action_path }}/perturb_theta.py \
           "${{ inputs.ic-file }}" \
           --seed ${{ inputs.seed }} \
           --magnitude ${{ inputs.magnitude }}

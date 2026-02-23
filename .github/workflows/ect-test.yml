@@ -102,7 +102,7 @@ jobs:
             exit 1
           fi
           echo "Perturbing: ${IC_FILE}"
-          python .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${{ matrix.member }}
+          python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${{ matrix.member }}
 
       - name: Configure namelist
         shell: bash
