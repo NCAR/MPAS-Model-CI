@@ -121,6 +121,171 @@ def find_log_files(directory):
     return log_files
 
 
+def print_results_table(results, title="Validation Results"):
+    """Print a formatted results table."""
+    print(f"\n{'=' * 90}")
+    print(f"  {title}")
+    print(f"{'=' * 90}")
+    print(f"{'Configuration':<55} {'Status':<8} {'Timesteps':<10} {'Max Err %':<12}")
+    print(f"{'-' * 90}")
+
+    for r in results:
+        name = r['name']
+        status = r['status']
+
+        if status in ['MATCH', 'CLOSE', 'DIFFER']:
+            timesteps = f"{r['timesteps_test']}/{r['timesteps_ref']}"
+            max_err = max(r['max_errors'].values())
+            max_err_str = f"{max_err:.4f}"
+        elif status == 'NO_LOG':
+            timesteps = '-'
+            max_err_str = '-'
+        else:
+            timesteps = f"{r.get('timesteps_test', 0)}/{r.get('timesteps_ref', 0)}"
+            max_err_str = '-'
+
+        if status == 'MATCH':
+            status_str = f"\033[92m{status}\033[0m"
+        elif status == 'CLOSE':
+            status_str = f"\033[93m{status}\033[0m"
+        else:
+            status_str = f"\033[91m{status}\033[0m"
+
+        print(f"{name:<55} {status_str:<17} {timesteps:<10} {max_err_str:<12}")
+
+    print(f"{'=' * 90}")
+
+    has_details = any(r['status'] in ['MATCH', 'CLOSE', 'DIFFER'] for r in results)
+    if has_details:
+        print(f"\nDetailed comparison (max % error by field):")
+        print(f"{'-' * 90}")
+        print(f"{'Configuration':<40} {'w_min':<12} {'w_max':<12} {'u_min':<12} {'u_max':<12}")
+        print(f"{'-' * 90}")
+        for r in results:
+            if r['status'] not in ['MATCH', 'CLOSE', 'DIFFER']:
+                continue
+            name = r['name'][:38] + '..' if len(r['name']) > 38 else r['name']
+            errs = r['max_errors']
+            print(f"{name:<40} {errs['w_min']:<12.6f} {errs['w_max']:<12.6f} "
+                  f"{errs['u_min']:<12.6f} {errs['u_max']:<12.6f}")
+        print(f"{'-' * 90}")
+
+
+def summarize_results(results, allow_missing=False):
+    """Print summary and return exit code."""
+    n_match = sum(1 for r in results if r['status'] == 'MATCH')
+    n_close = sum(1 for r in results if r['status'] == 'CLOSE')
+    n_differ = sum(1 for r in results if r['status'] == 'DIFFER')
+    n_no_log = sum(1 for r in results if r['status'] == 'NO_LOG')
+    n_failed = sum(1 for r in results if r['status'] in ['FAILED', 'ERROR'])
+
+    print(f"\nSummary: {n_match} MATCH, {n_close} CLOSE, {n_differ} DIFFER, "
+          f"{n_failed} FAILED, {n_no_log} NO_LOG")
+
+    if allow_missing:
+        if n_failed > 0 or n_differ > 0:
+            return 1
+        if n_no_log > 0:
+            print(f"\nNote: {n_no_log} configuration(s) had no log files "
+                  "(--allow-missing is set, not treated as failure)")
+        return 0
+    else:
+        if n_failed > 0 or n_differ > 0 or n_no_log > 0:
+            return 1
+        return 0
+
+
+def get_log_dirs(logs_dir, name_filter=None):
+    """Get sorted log subdirectories, optionally filtered by name substring."""
+    dirs = []
+    for d in sorted(Path(logs_dir).iterdir()):
+        if not d.is_dir():
+            continue
+        if name_filter and name_filter not in d.name:
+            continue
+        dirs.append(d)
+    return dirs
+
+
+def run_reference_comparison(logs_dir, reference, name_filter=None):
+    """Compare log files against a reference log."""
+    ref_data = parse_log_file(reference)
+    print(f"Reference: {reference}")
+    print(f"  Timesteps: {len(ref_data)}")
+
+    results = []
+    for log_dir in get_log_dirs(logs_dir, name_filter):
+        name = log_dir.name
+        log_files = list(log_dir.glob('log.atmosphere.*.out'))
+        if not log_files:
+            results.append({'name': name, 'status': 'NO_LOG', 'reason': 'No log file found'})
+            continue
+        result = compare_logs(log_files[0], reference)
+        result['name'] = name
+        results.append(result)
+
+    print_results_table(results, title="Reference Comparison")
+    return results
+
+
+def run_decomposition_test(logs_dir):
+    """
+    Compare multi-rank logs against corresponding 1-proc logs.
+    
+    Expects artifact directories named like:
+      logs-<N>proc-<compiler>-<mpi>-<gpu>-<io>
+    Pairs each N>1 directory with the matching 1proc directory.
+    """
+    rank_pattern = re.compile(r'^logs-(\d+)proc-(.+)$')
+
+    single_rank = {}
+    multi_rank = []
+
+    for log_dir in get_log_dirs(logs_dir):
+        m = rank_pattern.match(log_dir.name)
+        if not m:
+            continue
+        nprocs = int(m.group(1))
+        config_key = m.group(2)
+        if nprocs == 1:
+            single_rank[config_key] = log_dir
+        else:
+            multi_rank.append((nprocs, config_key, log_dir))
+
+    if not multi_rank:
+        print("No multi-rank log directories found for decomposition test.")
+        return []
+
+    results = []
+    for nprocs, config_key, multi_dir in sorted(multi_rank):
+        name = f"{nprocs}proc vs 1proc: {config_key}"
+        ref_dir = single_rank.get(config_key)
+
+        if ref_dir is None:
+            results.append({'name': name, 'status': 'NO_LOG',
+                            'reason': f'No matching 1proc log for {config_key}'})
+            continue
+
+        ref_logs = list(ref_dir.glob('log.atmosphere.*.out'))
+        test_logs = list(multi_dir.glob('log.atmosphere.*.out'))
+
+        if not ref_logs:
+            results.append({'name': name, 'status': 'NO_LOG',
+                            'reason': '1proc log file missing'})
+            continue
+        if not test_logs:
+            results.append({'name': name, 'status': 'NO_LOG',
+                            'reason': f'{nprocs}proc log file missing'})
+            continue
+
+        result = compare_logs(test_logs[0], ref_logs[0])
+        result['name'] = name
+        results.append(result)
+
+    print_results_table(results, title="Decomposition Consistency Test")
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Compare MPAS log files against a reference standard'
@@ -131,7 +296,9 @@ def main():
     )
     parser.add_argument(
         'reference',
-        help='Reference log file to compare against'
+        nargs='?',
+        default=None,
+        help='Reference log file to compare against (not required for --decomposition-test)'
     )
     parser.add_argument(
         '--threshold',
@@ -143,129 +310,45 @@ def main():
         '--allow-missing',
         action='store_true',
         default=False,
-        help='Do not fail if some configurations have no log files (e.g. due to infrastructure issues)'
+        help='Do not fail if some configurations have no log files'
     )
-    
+    parser.add_argument(
+        '--filter',
+        type=str,
+        default=None,
+        help='Only process log directories whose name contains this string'
+    )
+    parser.add_argument(
+        '--decomposition-test',
+        action='store_true',
+        default=False,
+        help='Compare multi-rank logs against 1-proc logs for decomposition consistency'
+    )
+
     args = parser.parse_args()
-    
-    if not Path(args.reference).exists():
-        print(f"ERROR: Reference file not found: {args.reference}")
-        sys.exit(1)
-    
+
     if not Path(args.logs_dir).exists():
         print(f"ERROR: Logs directory not found: {args.logs_dir}")
         sys.exit(1)
-    
-    # Parse reference file
-    ref_data = parse_log_file(args.reference)
-    print(f"Reference: {args.reference}")
-    print(f"  Timesteps: {len(ref_data)}")
-    print()
-    
-    # Find and compare all log files
-    results = []
-    
-    for log_dir in sorted(Path(args.logs_dir).iterdir()):
-        if not log_dir.is_dir():
-            continue
-        
-        # Extract config from directory name
-        # Format: mpas_240km_1rank_logs_<compiler>_<mpi>_<gpu>_<io>
-        name = log_dir.name
-        
-        log_files = list(log_dir.glob('log.atmosphere.*.out'))
-        if not log_files:
-            results.append({
-                'name': name,
-                'status': 'NO_LOG',
-                'reason': 'No log file found'
-            })
-            continue
-        
-        log_file = log_files[0]
-        result = compare_logs(log_file, args.reference)
-        result['name'] = name
-        results.append(result)
-    
-    # Print summary table
-    print("=" * 90)
-    print(f"{'Configuration':<55} {'Status':<8} {'Timesteps':<10} {'Max Err %':<12}")
-    print("=" * 90)
-    
-    for r in results:
-        name = r['name'].replace('mpas_240km_1rank_logs_', '')
-        status = r['status']
-        
-        if status in ['MATCH', 'CLOSE', 'DIFFER']:
-            timesteps = f"{r['timesteps_test']}/{r['timesteps_ref']}"
-            max_err = max(r['max_errors'].values())
-            max_err_str = f"{max_err:.4f}"
-        elif status == 'NO_LOG':
-            timesteps = '-'
-            max_err_str = '-'
-        else:
-            timesteps = f"{r.get('timesteps_test', 0)}/{r.get('timesteps_ref', 0)}"
-            max_err_str = '-'
-        
-        # Color coding for terminal
-        if status == 'MATCH':
-            status_str = f"\033[92m{status}\033[0m"  # Green
-        elif status == 'CLOSE':
-            status_str = f"\033[93m{status}\033[0m"  # Yellow
-        elif status == 'NO_LOG':
-            status_str = f"\033[91m{status}\033[0m"  # Red
-        elif status == 'FAILED':
-            status_str = f"\033[91m{status}\033[0m"  # Red
-        else:
-            status_str = f"\033[91m{status}\033[0m"  # Red
-        
-        print(f"{name:<55} {status_str:<17} {timesteps:<10} {max_err_str:<12}")
-    
-    print("=" * 90)
-    
-    # Print detailed errors for non-matching results
-    print("\nDetailed comparison (max % error by field):")
-    print("-" * 90)
-    print(f"{'Configuration':<40} {'w_min':<12} {'w_max':<12} {'u_min':<12} {'u_max':<12}")
-    print("-" * 90)
-    
-    for r in results:
-        if r['status'] not in ['MATCH', 'CLOSE', 'DIFFER']:
-            continue
-        
-        name = r['name'].replace('mpas_240km_1rank_logs_', '')
-        if len(name) > 38:
-            name = name[:38] + '..'
-        
-        errs = r['max_errors']
-        print(f"{name:<40} {errs['w_min']:<12.6f} {errs['w_max']:<12.6f} "
-              f"{errs['u_min']:<12.6f} {errs['u_max']:<12.6f}")
-    
-    print("-" * 90)
-    
-    # Summary counts
-    n_match = sum(1 for r in results if r['status'] == 'MATCH')
-    n_close = sum(1 for r in results if r['status'] == 'CLOSE')
-    n_differ = sum(1 for r in results if r['status'] == 'DIFFER')
-    n_no_log = sum(1 for r in results if r['status'] == 'NO_LOG')
-    n_failed = sum(1 for r in results if r['status'] in ['FAILED', 'ERROR'])
-    
-    print(f"\nSummary: {n_match} MATCH, {n_close} CLOSE, {n_differ} DIFFER, "
-          f"{n_failed} FAILED, {n_no_log} NO_LOG")
-    
-    # Exit with error if any actual failures or divergent results
-    # --allow-missing tolerates NO_LOG (e.g. from infrastructure/pod failures)
-    # but still fails on FAILED (log exists with 0 timesteps) and DIFFER
-    if args.allow_missing:
-        if n_failed > 0 or n_differ > 0:
-            sys.exit(1)
-        if n_no_log > 0:
-            print(f"\nNote: {n_no_log} configuration(s) had no log files "
-                  "(--allow-missing is set, not treated as failure)")
+
+    exit_code = 0
+
+    if args.decomposition_test:
+        results = run_decomposition_test(args.logs_dir)
+        ec = summarize_results(results, allow_missing=args.allow_missing)
+        exit_code = max(exit_code, ec)
     else:
-        if n_failed > 0 or n_differ > 0 or n_no_log > 0:
+        if args.reference is None:
+            print("ERROR: reference log file required (or use --decomposition-test)")
             sys.exit(1)
-    sys.exit(0)
+        if not Path(args.reference).exists():
+            print(f"ERROR: Reference file not found: {args.reference}")
+            sys.exit(1)
+        results = run_reference_comparison(args.logs_dir, args.reference, args.filter)
+        ec = summarize_results(results, allow_missing=args.allow_missing)
+        exit_code = max(exit_code, ec)
+
+    sys.exit(exit_code)
 
 
 if __name__ == '__main__':

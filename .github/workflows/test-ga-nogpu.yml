@@ -71,7 +71,7 @@ jobs:
           retention-days: 1
 
   #===========================================================================
-  # RUN: NoGPU configurations only
+  # RUN: NoGPU configurations, 1 and 4 MPI ranks
   #===========================================================================
   run:
     needs: build
@@ -79,8 +79,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        num-procs: [1, 4]
+        compiler: [gcc, nvhpc, oneapi]
+        mpi: [mpich3, openmpi]
         include:
-          # GCC runs
           - compiler: gcc
             mpi: mpich3
             image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
@@ -89,8 +91,6 @@ jobs:
             mpi: openmpi
             image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
             mpi-impl: openmpi
-          
-          # NVHPC runs (nogpu)
           - compiler: nvhpc
             mpi: mpich3
             image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3:devel
@@ -99,8 +99,6 @@ jobs:
             mpi: openmpi
             image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi:devel
             mpi-impl: openmpi
-          
-          # OneAPI runs
           - compiler: oneapi
             mpi: mpich3
             image: ncarcisl/cisldev-x86_64-almalinux9-oneapi-mpich3:devel
@@ -110,7 +108,7 @@ jobs:
             image: ncarcisl/cisldev-x86_64-almalinux9-oneapi-openmpi:devel
             mpi-impl: openmpi
 
-    name: Run (${{ matrix.compiler }}, ${{ matrix.mpi }})
+    name: Run ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }})
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
@@ -130,19 +128,20 @@ jobs:
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
+          num-procs: ${{ matrix.num-procs }}
           mpi-impl: ${{ matrix.mpi-impl }}
-          working-dir: run-${{ matrix.compiler }}-${{ matrix.mpi }}
+          working-dir: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
         if: always() && steps.download.outcome == 'success'
         with:
-          name: logs-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-smiol
-          path: run-${{ matrix.compiler }}-${{ matrix.mpi }}/log.*
+          name: logs-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-smiol
+          path: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}/log.*
           retention-days: 5
 
   #===========================================================================
-  # VALIDATE: Compare all logs against reference
+  # VALIDATE: Compare logs against reference and across MPI ranks
   #===========================================================================
   validate:
     needs: run
@@ -165,10 +164,20 @@ jobs:
           pattern: logs-*
           path: logs
 
-      - name: Validate logs
+      - name: Validate 1-proc logs against reference
         uses: ./.github/actions/validate-logs
         with:
           logs-path: logs
+          log-filter: 1proc
+          reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
+
+      - name: Decomposition test — compare 4-proc logs against 1-proc logs
+        shell: bash
+        run: |
+          python .github/workflows/validation/compare_logs.py \
+            logs \
+            --decomposition-test \
+            --allow-missing
 
   #===========================================================================
   # CLEANUP: Remove executable artifacts

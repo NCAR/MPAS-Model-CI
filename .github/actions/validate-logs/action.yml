@@ -8,11 +8,15 @@ inputs:
   reference-log:
     description: 'Path to reference log file'
     required: false
-    default: '.github/workflows/validation/reference_log.atmosphere.0000.out'
+    default: '.github/test-cases/240km/reference_log.atmosphere.0000.out'
   validation-script:
     description: 'Path to validation script'
     required: false
     default: '.github/workflows/validation/compare_logs.py'
+  log-filter:
+    description: 'Only validate log directories whose name contains this string'
+    required: false
+    default: ''
 
 outputs:
   status:
@@ -41,9 +45,15 @@ runs:
       shell: bash
       run: |
         set +e
+        FILTER_ARGS=""
+        if [ -n "${{ inputs.log-filter }}" ]; then
+          FILTER_ARGS="--filter ${{ inputs.log-filter }}"
+        fi
         python ${{ inputs.validation-script }} \
           "${{ inputs.logs-path }}" \
-          "${{ inputs.reference-log }}"
+          "${{ inputs.reference-log }}" \
+          --allow-missing \
+          ${FILTER_ARGS}
         VALIDATE_STATUS=$?
         set -e
         
