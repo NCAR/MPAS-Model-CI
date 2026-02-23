@@ -21,7 +21,9 @@ runs:
   steps:
     - name: Install netCDF4
       shell: bash
-      run: pip install netCDF4 numpy 2>/dev/null || pip3 install netCDF4 numpy
+      run: |
+        python3 -m ensurepip --upgrade 2>/dev/null || true
+        python3 -m pip install netCDF4 numpy
 
     - name: Perturb theta field
       shell: bash

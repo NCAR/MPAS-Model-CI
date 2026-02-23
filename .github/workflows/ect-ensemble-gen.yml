@@ -123,7 +123,9 @@ jobs:
 
       - name: Install Python dependencies
         shell: bash
-        run: pip install netCDF4 numpy
+        run: |
+          python3 -m ensurepip --upgrade 2>/dev/null || true
+          python3 -m pip install netCDF4 numpy
 
       - name: Run ensemble members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
         shell: bash
