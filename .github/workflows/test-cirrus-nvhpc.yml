@@ -114,6 +114,7 @@ jobs:
   #===========================================================================
   run:
     needs: build
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -190,11 +191,14 @@ jobs:
           nvidia-smi || echo "WARNING: nvidia-smi failed"
 
       - name: Download executable
+        id: download
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
 
       - name: Run MPAS-A
+        if: steps.download.outcome == 'success'
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
@@ -203,7 +207,7 @@ jobs:
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.download.outcome == 'success'
         with:
           name: logs-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
           path: run-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}/log.*
@@ -228,15 +232,23 @@ jobs:
           python-version: '3.11'
 
       - name: Download all logs
+        id: download-logs
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: logs-*
           path: logs
 
       - name: Validate logs
+        if: steps.download-logs.outcome == 'success'
         uses: ./.github/actions/validate-logs
         with:
           logs-path: logs
+
+      - name: No logs available
+        if: steps.download-logs.outcome != 'success'
+        run: |
+          echo "::warning::No log artifacts available — all runs may have been skipped or failed."
 
   #===========================================================================
   # CLEANUP: Remove executable artifacts
