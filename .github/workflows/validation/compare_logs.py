@@ -139,6 +139,12 @@ def main():
         default=1.0,
         help='Percent error threshold for MATCH status (default: 1.0)'
     )
+    parser.add_argument(
+        '--allow-missing',
+        action='store_true',
+        default=False,
+        help='Do not fail if some configurations have no log files (e.g. due to infrastructure issues)'
+    )
     
     args = parser.parse_args()
     
@@ -241,13 +247,24 @@ def main():
     n_match = sum(1 for r in results if r['status'] == 'MATCH')
     n_close = sum(1 for r in results if r['status'] == 'CLOSE')
     n_differ = sum(1 for r in results if r['status'] == 'DIFFER')
-    n_failed = sum(1 for r in results if r['status'] in ['FAILED', 'NO_LOG', 'ERROR'])
+    n_no_log = sum(1 for r in results if r['status'] == 'NO_LOG')
+    n_failed = sum(1 for r in results if r['status'] in ['FAILED', 'ERROR'])
     
-    print(f"\nSummary: {n_match} MATCH, {n_close} CLOSE, {n_differ} DIFFER, {n_failed} FAILED/NO_LOG")
+    print(f"\nSummary: {n_match} MATCH, {n_close} CLOSE, {n_differ} DIFFER, "
+          f"{n_failed} FAILED, {n_no_log} NO_LOG")
     
-    # Exit with error if any failures
-    if n_failed > 0 or n_differ > 0:
-        sys.exit(1)
+    # Exit with error if any actual failures or divergent results
+    # --allow-missing tolerates NO_LOG (e.g. from infrastructure/pod failures)
+    # but still fails on FAILED (log exists with 0 timesteps) and DIFFER
+    if args.allow_missing:
+        if n_failed > 0 or n_differ > 0:
+            sys.exit(1)
+        if n_no_log > 0:
+            print(f"\nNote: {n_no_log} configuration(s) had no log files "
+                  "(--allow-missing is set, not treated as failure)")
+    else:
+        if n_failed > 0 or n_differ > 0 or n_no_log > 0:
+            sys.exit(1)
     sys.exit(0)
 
 

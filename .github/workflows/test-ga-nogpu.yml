@@ -75,6 +75,7 @@ jobs:
   #===========================================================================
   run:
     needs: build
+    if: always() && needs.build.result != 'cancelled'
     strategy:
       fail-fast: false
       matrix:
@@ -118,11 +119,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download executable
+        id: download
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-smiol
 
       - name: Run MPAS-A
+        if: steps.download.outcome == 'success'
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
@@ -131,7 +135,7 @@ jobs:
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.download.outcome == 'success'
         with:
           name: logs-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-smiol
           path: run-${{ matrix.compiler }}-${{ matrix.mpi }}/log.*

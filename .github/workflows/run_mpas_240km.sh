@@ -24,7 +24,13 @@ if [ "${MPI_IMPL}" = "openmpi" ]; then
     MPI_FLAGS="${MPI_FLAGS} --allow-run-as-root"
 fi
 
-tar xzf .github/workflows/240km.tar.gz
+DATA_REPO="${DATA_REPO:-NCAR/mpas-ci-data}"
+ARCHIVE="240km.tar.gz"
+if [ ! -f "${ARCHIVE}" ]; then
+    echo "Downloading ${ARCHIVE} from ${DATA_REPO}..."
+    curl -fsSL "https://github.com/${DATA_REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+fi
+tar xzf "${ARCHIVE}"
 mv 240km 240km_${NUM_PROCS}
 cd 240km_${NUM_PROCS}/
 

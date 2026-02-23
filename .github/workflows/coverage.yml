@@ -1,0 +1,86 @@
+# Code Coverage workflow
+# Builds MPAS-A with GCC coverage instrumentation, runs the 240km test case,
+# generates an lcov report, and uploads to Codecov.
+#
+name: Code Coverage
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, feature-ci]
+  pull_request:
+    branches: [master, feature-ci]
+
+jobs:
+  coverage:
+    name: Build, Run, and Generate Coverage
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Install lcov
+        run: |
+          dnf install -y epel-release
+          dnf install -y lcov
+
+      - name: Build MPAS-A with coverage flags
+        run: |
+          source /container/config_env.sh
+          
+          # Patch gfortran target: swap -O3 for -O0 --coverage -g
+          sed -i 's/"FFLAGS_OPT = -O3 -ffree-line-length-none/"FFLAGS_OPT = -O0 --coverage -g -ffree-line-length-none/' Makefile
+          sed -i 's/"CFLAGS_OPT = -O3"/"CFLAGS_OPT = -O0 --coverage -g"/' Makefile
+          sed -i 's/"CXXFLAGS_OPT = -O3"/"CXXFLAGS_OPT = -O0 --coverage -g"/' Makefile
+          sed -i 's/"LDFLAGS_OPT = -O3"/"LDFLAGS_OPT = --coverage"/' Makefile
+          
+          make gfortran CORE=atmosphere --jobs $(nproc)
+
+      - name: Download and run 240km test case
+        run: |
+          source /container/config_env.sh
+          curl -fsSL "https://github.com/NCAR/mpas-ci-data/raw/main/240km.tar.gz" -o 240km.tar.gz
+          tar xzf 240km.tar.gz
+          cd 240km
+          ln -sf ../atmosphere_model .
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '0_00:30:00'/" namelist.atmosphere
+          ulimit -s unlimited 2>/dev/null || true
+          mpirun -n 1 ./atmosphere_model
+
+      - name: Generate coverage report
+        run: |
+          source /container/config_env.sh
+          
+          lcov --capture \
+               --directory src \
+               --output-file coverage.info \
+               --ignore-errors source,gcov
+          
+          # Remove external/system files from coverage
+          lcov --remove coverage.info \
+               '/usr/*' \
+               '*/external/*' \
+               --output-file coverage.info \
+               --ignore-errors unused
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          flags: fortran
+          name: mpas-atmosphere
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.info
+          retention-days: 30

@@ -112,6 +112,7 @@ jobs:
   #===========================================================================
   run-mpas-240km:
     needs: build-mpas
+    if: ${{ !cancelled() }}
 
     strategy:
       fail-fast: false
@@ -168,14 +169,18 @@ jobs:
           .github/workflows/interrogate_env.sh
 
       - name: Download atmosphere_model executable
+        id: download
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: atmosphere_model-${{ matrix.compiler }}_${{ matrix.mpi }}_${{ matrix.gpu }}_${{ matrix.io }}
 
       - name: Make atmosphere_model executable
+        if: steps.download.outcome == 'success'
         run: chmod +x atmosphere_model
 
       - name: Run MPAS-A 240km case with ${{ matrix.num_procs }} ranks
+        if: steps.download.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 20
         run: |
@@ -190,6 +195,7 @@ jobs:
           .github/workflows/run_mpas_240km.sh ${{ matrix.num_procs }}
 
       - name: Upload log files
+        if: steps.download.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: mpas_240km_${{ matrix.num_procs }}rank_logs_${{ matrix.compiler }}_${{ matrix.mpi }}_${{ matrix.gpu }}_${{ matrix.io }}
@@ -231,7 +237,8 @@ jobs:
         run: |
           python .github/workflows/validation/compare_logs.py \
             logs \
-            .github/workflows/validation/reference_log.atmosphere.0000.out
+            .github/workflows/validation/reference_log.atmosphere.0000.out \
+            --allow-missing
 
   #===========================================================================
   # CLEANUP JOB: Deletes executable artifacts after all runs complete

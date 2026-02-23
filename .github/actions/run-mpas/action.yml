@@ -11,29 +11,37 @@ inputs:
     required: false
     default: '1'
   run-duration:
-    description: 'Run duration (format: D_HH:MM:SS)'
+    description: 'Run duration (format: D_HH:MM:SS). Overrides config.env default.'
     required: false
-    default: '0_06:00:00'
+    default: ''
   restart-interval:
-    description: 'Restart output interval (format: D_HH:MM:SS)'
+    description: 'Restart output interval (format: D_HH:MM:SS). Overrides config.env default.'
     required: false
-    default: '0_06:00:00'
+    default: ''
+  resolution:
+    description: 'Test case resolution name (e.g., 240km). Used to find archive and config under .github/test-cases/<resolution>/'
+    required: false
+    default: '240km'
   test-case:
-    description: 'Test case archive (tar.gz file path)'
+    description: 'Override: explicit path to test case archive (tar.gz). If set, overrides resolution-based lookup.'
     required: false
-    default: '.github/workflows/240km.tar.gz'
+    default: ''
+  data-repo:
+    description: 'GitHub repo hosting test case archives (org/repo format)'
+    required: false
+    default: 'NCAR/mpas-ci-data'
   mpi-impl:
     description: 'MPI implementation (openmpi, mpich)'
     required: false
     default: ''
   run-timeout:
-    description: 'Run timeout in minutes'
+    description: 'Run timeout in minutes. Overrides config.env default.'
     required: false
-    default: '20'
+    default: ''
   working-dir:
     description: 'Working directory name for the run'
     required: false
-    default: 'run'
+    default: ''
 
 outputs:
   log-dir:
@@ -46,14 +54,92 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Load test case configuration
+      id: config
+      shell: bash
+      run: |
+        RESOLUTION="${{ inputs.resolution }}"
+        CONFIG_FILE=".github/test-cases/${RESOLUTION}/config.env"
+        
+        # Defaults
+        ARCHIVE=""
+        DURATION="0_06:00:00"
+        RESTART="0_06:00:00"
+        TIMEOUT="20"
+        
+        # Load from config.env if it exists
+        if [ -f "${CONFIG_FILE}" ]; then
+          echo "Loading config from ${CONFIG_FILE}"
+          source "${CONFIG_FILE}"
+          DURATION="${RUN_DURATION:-${DURATION}}"
+          RESTART="${RESTART_INTERVAL:-${RESTART}}"
+          TIMEOUT="${RUN_TIMEOUT:-${TIMEOUT}}"
+        fi
+        
+        # Determine archive path: explicit input > local file > download from data repo
+        if [ -n "${{ inputs.test-case }}" ]; then
+          ARCHIVE="${{ inputs.test-case }}"
+        else
+          ARCHIVE="${RESOLUTION}.tar.gz"
+        fi
+        
+        # Apply explicit overrides from action inputs
+        if [ -n "${{ inputs.run-duration }}" ]; then
+          DURATION="${{ inputs.run-duration }}"
+        fi
+        if [ -n "${{ inputs.restart-interval }}" ]; then
+          RESTART="${{ inputs.restart-interval }}"
+        fi
+        if [ -n "${{ inputs.run-timeout }}" ]; then
+          TIMEOUT="${{ inputs.run-timeout }}"
+        fi
+        
+        # Determine working directory
+        WORKDIR="${{ inputs.working-dir }}"
+        if [ -z "${WORKDIR}" ]; then
+          WORKDIR="run-${RESOLUTION}"
+        fi
+        
+        echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT
+        echo "duration=${DURATION}" >> $GITHUB_OUTPUT
+        echo "restart=${RESTART}" >> $GITHUB_OUTPUT
+        echo "timeout=${TIMEOUT}" >> $GITHUB_OUTPUT
+        echo "workdir=${WORKDIR}" >> $GITHUB_OUTPUT
+        echo "resolution=${RESOLUTION}" >> $GITHUB_OUTPUT
+        
+        echo "=== Resolved test case configuration ==="
+        echo "  Resolution: ${RESOLUTION}"
+        echo "  Archive:    ${ARCHIVE}"
+        echo "  Duration:   ${DURATION}"
+        echo "  Restart:    ${RESTART}"
+        echo "  Timeout:    ${TIMEOUT}m"
+        echo "  Work dir:   ${WORKDIR}"
+
+    - name: Download test case data
+      shell: bash
+      run: |
+        ARCHIVE="${{ steps.config.outputs.archive }}"
+        DATA_REPO="${{ inputs.data-repo }}"
+        
+        if [ ! -f "${ARCHIVE}" ]; then
+          echo "Downloading ${ARCHIVE} from ${DATA_REPO}..."
+          curl -fsSL "https://github.com/${DATA_REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+          echo "Downloaded $(du -h "${ARCHIVE}" | cut -f1) archive"
+        else
+          echo "Archive ${ARCHIVE} already exists locally"
+        fi
+
     - name: Setup test case
       shell: bash
       run: |
+        ARCHIVE="${{ steps.config.outputs.archive }}"
+        WORKDIR="${{ steps.config.outputs.workdir }}"
+        
         # Extract test case
-        tar xzf ${{ inputs.test-case }}
+        tar xzf "${ARCHIVE}"
         
         # Get the extracted directory name (avoiding SIGPIPE with head)
-        CASE_DIR=$(tar tzf ${{ inputs.test-case }} 2>/dev/null | head -1 | cut -d/ -f1 || true)
+        CASE_DIR=$(tar tzf "${ARCHIVE}" 2>/dev/null | head -1 | cut -d/ -f1 || true)
         if [ -z "${CASE_DIR}" ]; then
           # Fallback: find the directory that was just created
           CASE_DIR=$(ls -td */ 2>/dev/null | head -1 | tr -d '/')
@@ -61,24 +147,27 @@ runs:
         echo "Extracted case directory: ${CASE_DIR}"
         
         # Rename to working directory
-        mv "${CASE_DIR}" ${{ inputs.working-dir }}
+        mv "${CASE_DIR}" "${WORKDIR}"
         
         # Link executable
         chmod +x ${{ inputs.executable }}
-        ln -sf $(realpath ${{ inputs.executable }}) ${{ inputs.working-dir }}/atmosphere_model
+        ln -sf $(realpath ${{ inputs.executable }}) "${WORKDIR}/atmosphere_model"
         
         echo "Setup complete. Working directory contents:"
-        ls -la ${{ inputs.working-dir }}/
+        ls -la "${WORKDIR}/"
 
     - name: Configure namelist
       shell: bash
-      working-directory: ${{ inputs.working-dir }}
+      working-directory: ${{ steps.config.outputs.workdir }}
       run: |
+        DURATION="${{ steps.config.outputs.duration }}"
+        RESTART="${{ steps.config.outputs.restart }}"
+        
         # Modify run duration
-        sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${{ inputs.run-duration }}'/" namelist.atmosphere
+        sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${DURATION}'/" namelist.atmosphere
         
         # Modify restart interval
-        sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="${{ inputs.restart-interval }}"/' streams.atmosphere
+        sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART}"'"/' streams.atmosphere
         
         echo "=== Namelist configuration ==="
         grep config_run_duration namelist.atmosphere
@@ -86,10 +175,11 @@ runs:
     - name: Run MPAS-A
       id: run
       shell: bash
-      working-directory: ${{ inputs.working-dir }}
+      working-directory: ${{ steps.config.outputs.workdir }}
       run: |
+        TIMEOUT="${{ steps.config.outputs.timeout }}"
+        
         # Source container environment if available
-        # This sets LD_LIBRARY_PATH and other runtime paths
         if [ -f /container/config_env.sh ]; then
           source /container/config_env.sh
         fi
@@ -109,8 +199,9 @@ runs:
         ulimit -s unlimited 2>/dev/null || echo "Warning: Could not set unlimited stack size"
         
         echo "=== Run configuration ==="
+        echo "  Resolution: ${{ steps.config.outputs.resolution }}"
         echo "  Processors: ${{ inputs.num-procs }}"
-        echo "  Duration: ${{ inputs.run-duration }}"
+        echo "  Duration: ${{ steps.config.outputs.duration }}"
         echo "  MPI_IMPL: ${MPI_IMPL:-auto}"
         echo "  MPI_FLAGS: ${MPI_FLAGS}"
         echo "  Stack limit: $(ulimit -s)"
@@ -118,7 +209,7 @@ runs:
         
         # Run model
         set +e
-        timeout ${{ inputs.run-timeout }}m mpirun -n ${{ inputs.num-procs }} ${MPI_FLAGS} ./atmosphere_model
+        timeout ${TIMEOUT}m mpirun -n ${{ inputs.num-procs }} ${MPI_FLAGS} ./atmosphere_model
         RUN_STATUS=$?
         set -e
         
@@ -136,13 +227,14 @@ runs:
       shell: bash
       if: always()
       run: |
+        WORKDIR="${{ steps.config.outputs.workdir }}"
         echo "=== Output files ==="
-        if [ -d "${{ inputs.working-dir }}" ]; then
-          cd "${{ inputs.working-dir }}"
+        if [ -d "${WORKDIR}" ]; then
+          cd "${WORKDIR}"
           ls -la log.* 2>/dev/null || echo "No log files found"
           ls -la *.nc 2>/dev/null || echo "No NetCDF files found"
         else
-          echo "Working directory ${{ inputs.working-dir }} does not exist"
+          echo "Working directory ${WORKDIR} does not exist"
         fi
 
     - name: Check run status
