@@ -1,0 +1,222 @@
+# Ensemble Consistency Test (ECT)
+# Runs 3 perturbed MPAS-A simulations on the 120km mesh and compares
+# against a pre-built ensemble summary file using PyCECT.
+#
+# This test detects statistically meaningful changes in model output
+# that go beyond internal variability (non-BFB but scientifically equivalent
+# changes will pass). Run this on code changes NOT expected to change science.
+#
+# Reference: Price-Broncucia et al. (2025), doi:10.5194/gmd-18-2349-2025
+
+name: Ensemble Consistency Test (ECT)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  #===========================================================================
+  # BUILD
+  #===========================================================================
+  build:
+    name: Build MPAS-A
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: gfortran
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-ect
+          path: atmosphere_model
+          retention-days: 1
+
+  #===========================================================================
+  # RUN: 3 perturbed ensemble members
+  #===========================================================================
+  run:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        member: [0, 1, 2]
+
+    name: ECT member ${{ matrix.member }}
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download executable
+        uses: actions/download-artifact@v4
+        with:
+          name: exe-ect
+
+      - name: Download 120km test case
+        shell: bash
+        run: |
+          DATA_REPO="NCAR/mpas-ci-data"
+          ARCHIVE="120km.tar.gz"
+          curl -fsSL "https://github.com/${DATA_REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+          tar xzf "${ARCHIVE}"
+          CASE_DIR=$(tar tzf "${ARCHIVE}" 2>/dev/null | head -1 | cut -d/ -f1)
+          mv "${CASE_DIR}" run-ect-${{ matrix.member }}
+
+      - name: Setup run directory
+        shell: bash
+        run: |
+          cd run-ect-${{ matrix.member }}
+          chmod +x ../atmosphere_model
+          ln -sf $(realpath ../atmosphere_model) ./atmosphere_model
+
+      - name: Install Python dependencies
+        shell: bash
+        run: pip install netCDF4 numpy
+
+      - name: Perturb initial conditions
+        shell: bash
+        run: |
+          IC_FILE="run-ect-${{ matrix.member }}/init.nc"
+          if [ ! -f "${IC_FILE}" ]; then
+            IC_FILE=$(ls run-ect-${{ matrix.member }}/*.init*.nc 2>/dev/null | head -1)
+          fi
+          if [ -z "${IC_FILE}" ] || [ ! -f "${IC_FILE}" ]; then
+            echo "ERROR: Could not find initial conditions file"
+            ls -la run-ect-${{ matrix.member }}/*.nc 2>/dev/null || true
+            exit 1
+          fi
+          echo "Perturbing: ${IC_FILE}"
+          python .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${{ matrix.member }}
+
+      - name: Configure namelist
+        shell: bash
+        working-directory: run-ect-${{ matrix.member }}
+        run: |
+          source $GITHUB_WORKSPACE/.github/test-cases/120km/config.env
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
+          sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
+          echo "Run duration: ${RUN_DURATION}"
+
+      - name: Run MPAS-A
+        shell: bash
+        working-directory: run-ect-${{ matrix.member }}
+        run: |
+          source /container/config_env.sh
+          ulimit -s unlimited 2>/dev/null || true
+          timeout 30m mpirun -n 1 ./atmosphere_model
+
+      - name: Upload history file
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ect-history-${{ matrix.member }}
+          path: run-ect-${{ matrix.member }}/history.*.nc
+          retention-days: 1
+
+      - name: Upload log files
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ect-logs-${{ matrix.member }}
+          path: run-ect-${{ matrix.member }}/log.*
+          retention-days: 5
+
+  #===========================================================================
+  # VALIDATE: Run PyCECT against ensemble summary
+  #===========================================================================
+  validate:
+    needs: run
+    if: always()
+    name: PyCECT Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyCECT
+        run: pip install numpy scipy netCDF4 mpi4py
+
+      - name: Clone PyCECT
+        run: git clone --depth 1 https://github.com/NCAR/PyCECT.git pycect
+
+      - name: Download ensemble summary file
+        id: summary
+        run: |
+          DATA_REPO="NCAR/mpas-ci-data"
+          SUMMARY="mpas_ect_summary_120km.nc"
+          echo "Downloading ${SUMMARY} from ${DATA_REPO}..."
+          HTTP_CODE=$(curl -sL -w "%{http_code}" \
+            "https://github.com/${DATA_REPO}/raw/main/${SUMMARY}" \
+            -o "${SUMMARY}")
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "::warning::Ensemble summary file not yet available in ${DATA_REPO} (HTTP ${HTTP_CODE})"
+            echo "  The summary file must be generated using the ect-ensemble-gen.yml workflow"
+            echo "  and uploaded to ${DATA_REPO} before this test can run."
+            echo "available=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "Downloaded summary file: $(du -h ${SUMMARY})"
+          echo "available=true" >> $GITHUB_OUTPUT
+
+      - name: Download history files
+        if: steps.summary.outputs.available == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ect-history-*
+          path: ect-test-files
+          merge-multiple: true
+
+      - name: List test files
+        if: steps.summary.outputs.available == 'true'
+        run: |
+          echo "=== ECT test history files ==="
+          ls -la ect-test-files/ 2>/dev/null || echo "No history files found"
+
+      - name: Run PyCECT
+        if: steps.summary.outputs.available == 'true'
+        run: |
+          python pycect/pyCECT.py \
+            --sumfile mpas_ect_summary_120km.nc \
+            --indir ect-test-files \
+            --tslice 3 \
+            --mpas \
+            --verbose
+
+      - name: Skip notice
+        if: steps.summary.outputs.available != 'true'
+        run: |
+          echo "::notice::ECT validation skipped — ensemble summary file not yet available."
+          echo "Run the ect-ensemble-gen.yml workflow to generate it."
+
+  #===========================================================================
+  # CLEANUP
+  #===========================================================================
+  cleanup:
+    needs: [run, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+
+    steps:
+      - name: Delete build artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: exe-ect
+          failOnError: false

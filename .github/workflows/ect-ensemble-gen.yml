@@ -1,0 +1,287 @@
+# Ensemble Consistency Test — Ensemble Generation
+# Generates 200 perturbed MPAS-A simulations on the 120km mesh and produces
+# an ensemble summary file using pyEnsSumMPAS for use with PyCECT.
+#
+# This is expensive (~200 model runs) and should only be triggered manually
+# when there are major version or science changes requiring a new reference ensemble.
+#
+# Reference: Price-Broncucia et al. (2025), doi:10.5194/gmd-18-2349-2025
+
+name: ECT Ensemble Generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      ensemble-size:
+        description: 'Number of ensemble members to generate'
+        type: number
+        required: false
+        default: 200
+      members-per-job:
+        description: 'Number of ensemble members to run per job (batch size)'
+        type: number
+        required: false
+        default: 10
+
+jobs:
+  #===========================================================================
+  # PREPARE: Compute batch matrix
+  #===========================================================================
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      batches: ${{ steps.compute.outputs.batches }}
+      ensemble-size: ${{ steps.compute.outputs.ensemble-size }}
+    steps:
+      - name: Compute batch ranges
+        id: compute
+        run: |
+          ESIZE=${{ inputs.ensemble-size || 200 }}
+          BATCH=${{ inputs.members-per-job || 10 }}
+          echo "ensemble-size=${ESIZE}" >> $GITHUB_OUTPUT
+
+          BATCHES="["
+          for (( start=0; start<ESIZE; start+=BATCH )); do
+            end=$((start + BATCH - 1))
+            if [ $end -ge $ESIZE ]; then
+              end=$((ESIZE - 1))
+            fi
+            if [ "$BATCHES" != "[" ]; then
+              BATCHES="${BATCHES},"
+            fi
+            BATCHES="${BATCHES}{\"start\":${start},\"end\":${end}}"
+          done
+          BATCHES="${BATCHES}]"
+
+          echo "batches=${BATCHES}" >> $GITHUB_OUTPUT
+          echo "Generated batches: ${BATCHES}"
+
+  #===========================================================================
+  # BUILD
+  #===========================================================================
+  build:
+    name: Build MPAS-A
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: gfortran
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-ect-ensemble
+          path: atmosphere_model
+          retention-days: 1
+
+  #===========================================================================
+  # RUN: Batched ensemble members
+  #===========================================================================
+  run-ensemble:
+    needs: [prepare, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: ${{ fromJson(needs.prepare.outputs.batches) }}
+
+    name: Members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download executable
+        uses: actions/download-artifact@v4
+        with:
+          name: exe-ect-ensemble
+
+      - name: Make executable
+        run: chmod +x atmosphere_model
+
+      - name: Download 120km test case
+        shell: bash
+        run: |
+          DATA_REPO="NCAR/mpas-ci-data"
+          ARCHIVE="120km.tar.gz"
+          curl -fsSL "https://github.com/${DATA_REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+          tar xzf "${ARCHIVE}"
+          CASE_DIR=$(tar tzf "${ARCHIVE}" 2>/dev/null | head -1 | cut -d/ -f1)
+          mv "${CASE_DIR}" base-case
+
+      - name: Install Python dependencies
+        shell: bash
+        run: pip install netCDF4 numpy
+
+      - name: Run ensemble members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
+        shell: bash
+        run: |
+          source /container/config_env.sh
+          source .github/test-cases/120km/config.env
+          ulimit -s unlimited 2>/dev/null || true
+
+          mkdir -p history-output
+
+          for MEMBER in $(seq ${{ matrix.batch.start }} ${{ matrix.batch.end }}); do
+            MEMBER_ID=$(printf "%04d" ${MEMBER})
+            RUNDIR="run-ect-${MEMBER_ID}"
+            echo ""
+            echo "=========================================="
+            echo "  Ensemble member ${MEMBER_ID}"
+            echo "=========================================="
+
+            cp -r base-case "${RUNDIR}"
+            ln -sf $(realpath atmosphere_model) "${RUNDIR}/atmosphere_model"
+
+            # Find and perturb initial conditions
+            IC_FILE="${RUNDIR}/init.nc"
+            if [ ! -f "${IC_FILE}" ]; then
+              IC_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
+            fi
+            python .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${MEMBER}
+
+            # Configure namelist
+            cd "${RUNDIR}"
+            sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
+            sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
+
+            # Run model
+            timeout ${RUN_TIMEOUT}m mpirun -n 1 ./atmosphere_model
+            RUN_STATUS=$?
+
+            if [ $RUN_STATUS -ne 0 ]; then
+              echo "::warning::Member ${MEMBER_ID} failed with exit code ${RUN_STATUS}"
+              cd ..
+              continue
+            fi
+
+            # Copy history file with member ID in name for pyEnsSumMPAS
+            HIST_FILE=$(ls history.*.nc 2>/dev/null | tail -1)
+            if [ -n "${HIST_FILE}" ]; then
+              cp "${HIST_FILE}" "../history-output/history.${MEMBER_ID}.nc"
+              echo "Saved history file for member ${MEMBER_ID}"
+            else
+              echo "::warning::No history file found for member ${MEMBER_ID}"
+            fi
+
+            cd ..
+            rm -rf "${RUNDIR}"
+          done
+
+          echo ""
+          echo "=== Completed batch ==="
+          ls -la history-output/
+
+      - name: Upload history files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ect-ensemble-${{ matrix.batch.start }}-${{ matrix.batch.end }}
+          path: history-output/
+          retention-days: 1
+
+  #===========================================================================
+  # SUMMARY: Generate ensemble summary file with pyEnsSumMPAS
+  #===========================================================================
+  generate-summary:
+    needs: [prepare, run-ensemble]
+    if: always() && needs.run-ensemble.result != 'cancelled'
+    name: Generate Summary
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install numpy scipy netCDF4
+
+      - name: Clone PyCECT
+        run: git clone --depth 1 https://github.com/NCAR/PyCECT.git pycect
+
+      - name: Download all history files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ect-ensemble-*
+          path: ensemble-files
+          merge-multiple: true
+
+      - name: List ensemble files
+        run: |
+          echo "=== Ensemble history files ==="
+          ls -la ensemble-files/
+          NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
+          echo "Total files: ${NFILES}"
+          if [ "${NFILES}" -lt 10 ]; then
+            echo "::error::Too few ensemble members (${NFILES}). Need at least ~50 for a useful summary."
+            exit 1
+          fi
+
+      - name: Generate ensemble summary
+        run: |
+          ESIZE=${{ needs.prepare.outputs.ensemble-size }}
+          NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
+          if [ "${NFILES}" -lt "${ESIZE}" ]; then
+            echo "::warning::Only ${NFILES} of ${ESIZE} requested members available"
+            ESIZE=${NFILES}
+          fi
+
+          python pycect/pyEnsSumMPAS.py \
+            --esize ${ESIZE} \
+            --indir ensemble-files \
+            --sumfile mpas_ect_summary_120km.nc \
+            --tslice 3 \
+            --tag $(date +%Y%m%d) \
+            --model mpas \
+            --mach github-actions \
+            --verbose \
+            --jsonfile pycect/empty_excluded.json \
+            --mpi_disable
+
+      - name: Upload summary file
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpas-ect-summary
+          path: mpas_ect_summary_120km.nc
+          retention-days: 90
+
+      - name: Summary
+        run: |
+          echo "=========================================="
+          echo "  ECT Ensemble Summary Generated"
+          echo "=========================================="
+          echo ""
+          echo "File: mpas_ect_summary_120km.nc"
+          echo "Size: $(du -h mpas_ect_summary_120km.nc | cut -f1)"
+          echo ""
+          echo "To use this summary file for ECT testing:"
+          echo "  1. Download the 'mpas-ect-summary' artifact"
+          echo "  2. Upload it to NCAR/mpas-ci-data as mpas_ect_summary_120km.nc"
+          echo "  3. The ect-test.yml workflow will automatically use it"
+
+  #===========================================================================
+  # CLEANUP
+  #===========================================================================
+  cleanup:
+    needs: [run-ensemble, generate-summary]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+
+    steps:
+      - name: Delete intermediate artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            exe-ect-ensemble
+            ect-ensemble-*
+          failOnError: false
