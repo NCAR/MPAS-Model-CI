@@ -108,11 +108,12 @@ jobs:
       - name: Make executable
         run: chmod +x atmosphere_model
 
-      - name: Download 120km test case
+      - name: Download test case
         shell: bash
         run: |
-          DATA_REPO="NCAR/mpas-ci-data"
-          ARCHIVE="120km.tar.gz"
+          source $GITHUB_WORKSPACE/.github/test-cases/ect-120km/config.env
+          DATA_REPO="${DATA_REPO}"
+          ARCHIVE="${RESOLUTION}.tar.gz"
           curl -fsSL "https://github.com/${DATA_REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
           tar xzf "${ARCHIVE}"
           CASE_DIR=$(tar tzf "${ARCHIVE}" 2>/dev/null | head -1 | cut -d/ -f1 || true)
@@ -131,7 +132,7 @@ jobs:
         shell: bash
         run: |
           source /container/config_env.sh
-          source .github/test-cases/120km/config.env
+          source .github/test-cases/ect-120km/config.env
           ulimit -s unlimited 2>/dev/null || true
 
           mkdir -p history-output
@@ -215,20 +216,28 @@ jobs:
       - name: Collect metadata
         id: meta
         run: |
+          source mpas-source/.github/test-cases/ect-120km/config.env
           VERSION=$(grep -oP 'version="\K[^"]+' mpas-source/src/core_atmosphere/Registry.xml || echo "unknown")
+          DATE=$(date -u +%Y-%m-%d)
+          SUMMARY_NAME="${ECT_SUMMARY_PREFIX}_v${VERSION}_${DATE//-/}.nc"
+
           echo "mpas-version=${VERSION}" >> $GITHUB_OUTPUT
           echo "branch=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
           echo "commit=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
-          echo "date=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
-          echo "resolution=120km" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
+          echo "resolution=${RESOLUTION}" >> $GITHUB_OUTPUT
           echo "ensemble-size=${{ needs.prepare.outputs.ensemble-size }}" >> $GITHUB_OUTPUT
+          echo "summary-prefix=${ECT_SUMMARY_PREFIX}" >> $GITHUB_OUTPUT
+          echo "summary-name=${SUMMARY_NAME}" >> $GITHUB_OUTPUT
+          echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
 
           echo "=== ECT Metadata ==="
           echo "  MPAS version: ${VERSION}"
           echo "  Branch:       ${GITHUB_REF_NAME}"
           echo "  Commit:       ${GITHUB_SHA::8}"
-          echo "  Resolution:   120km"
+          echo "  Resolution:   ${RESOLUTION}"
           echo "  Ensemble:     ${{ needs.prepare.outputs.ensemble-size }} members"
+          echo "  Summary:      ${SUMMARY_NAME}"
 
       - name: Install dependencies
         run: pip install numpy scipy netCDF4
@@ -256,6 +265,8 @@ jobs:
 
       - name: Generate ensemble summary
         run: |
+          SUMMARY_NAME="${{ steps.meta.outputs.summary-name }}"
+          TSLICE="${{ steps.meta.outputs.tslice }}"
           ESIZE=${{ needs.prepare.outputs.ensemble-size }}
           NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
           if [ "${NFILES}" -lt "${ESIZE}" ]; then
@@ -266,8 +277,8 @@ jobs:
           python pycect/pyEnsSumMPAS.py \
             --esize ${ESIZE} \
             --indir ensemble-files \
-            --sumfile mpas_ect_summary_120km.nc \
-            --tslice 3 \
+            --sumfile "${SUMMARY_NAME}" \
+            --tslice ${TSLICE} \
             --tag $(date +%Y%m%d) \
             --model mpas \
             --mach github-actions \
@@ -279,7 +290,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mpas-ect-summary
-          path: mpas_ect_summary_120km.nc
+          path: ${{ steps.meta.outputs.summary-name }}
           retention-days: 90
 
       - name: Push summary to mpas-ci-data
@@ -293,7 +304,8 @@ jobs:
             exit 0
           fi
 
-          SUMMARY_FILE="mpas_ect_summary_120km.nc"
+          SUMMARY_NAME="${{ steps.meta.outputs.summary-name }}"
+          SUMMARY_PREFIX="${{ steps.meta.outputs.summary-prefix }}"
           DATA_REPO="NCAR/mpas-ci-data"
           VERSION="${{ steps.meta.outputs.mpas-version }}"
           BRANCH="${{ steps.meta.outputs.branch }}"
@@ -301,46 +313,61 @@ jobs:
           DATE="${{ steps.meta.outputs.date }}"
           ESIZE="${{ steps.meta.outputs.ensemble-size }}"
           RESOLUTION="${{ steps.meta.outputs.resolution }}"
+          TSLICE="${{ steps.meta.outputs.tslice }}"
+          CURRENT_FILE="${SUMMARY_PREFIX}.nc"
 
           git clone "https://x-access-token:${CI_DATA_TOKEN}@github.com/${DATA_REPO}.git" ci-data
-          cp "${SUMMARY_FILE}" ci-data/
 
+          # Archive versioned copy
+          mkdir -p ci-data/ect-summaries
+          cp "${SUMMARY_NAME}" "ci-data/ect-summaries/"
+
+          # Update current summary (this is what ect-test.yml downloads)
+          cp "${SUMMARY_NAME}" "ci-data/${CURRENT_FILE}"
+
+          # Write metadata for current summary
           python3 -c "
-          import json, sys
+          import json
           json.dump({
-              'summary_file': '${SUMMARY_FILE}',
+              'current_summary': '${CURRENT_FILE}',
+              'versioned_summary': 'ect-summaries/${SUMMARY_NAME}',
               'mpas_version': '${VERSION}',
               'branch': '${BRANCH}',
               'commit': '${COMMIT}',
               'resolution': '${RESOLUTION}',
               'ensemble_size': int('${ESIZE}'),
               'generated': '${DATE}',
-              'pycect_tslice': 3,
+              'pycect_tslice': int('${TSLICE}'),
               'workflow_run': '${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}'
           }, open('ci-data/ect_summary_metadata.json', 'w'), indent=2)
+          print('Wrote ect_summary_metadata.json')
           "
 
           cd ci-data
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${SUMMARY_FILE}" ect_summary_metadata.json
+          git add "${CURRENT_FILE}" "ect-summaries/${SUMMARY_NAME}" ect_summary_metadata.json
           git commit -m "$(cat <<EOF
 Update ECT summary: MPAS v${VERSION} (${RESOLUTION})
 
-Branch:    ${BRANCH}
-Commit:    ${COMMIT}
-Ensemble:  ${ESIZE} members
+Archived: ect-summaries/${SUMMARY_NAME}
+Branch:   ${BRANCH}
+Commit:   ${COMMIT}
+Ensemble: ${ESIZE} members
 Generated: ${DATE}
-Run:       ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+Run:      ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 EOF
           )"
           git push
 
-          echo "=== Pushed summary to ${DATA_REPO} ==="
+          echo "=== Pushed to ${DATA_REPO} ==="
+          echo "  Current:  ${CURRENT_FILE}"
+          echo "  Archived: ect-summaries/${SUMMARY_NAME}"
 
       - name: Summary
         if: always()
         run: |
+          SUMMARY_NAME="${{ steps.meta.outputs.summary-name }}"
           echo "=========================================="
           echo "  ECT Ensemble Summary Generated"
           echo "=========================================="
@@ -352,9 +379,9 @@ EOF
           echo "  Ensemble size: ${{ steps.meta.outputs.ensemble-size }}"
           echo "  Date:          ${{ steps.meta.outputs.date }}"
           echo ""
-          if [ -f mpas_ect_summary_120km.nc ]; then
-            echo "  File: mpas_ect_summary_120km.nc"
-            echo "  Size: $(du -h mpas_ect_summary_120km.nc | cut -f1)"
+          if [ -f "${SUMMARY_NAME}" ]; then
+            echo "  File: ${SUMMARY_NAME}"
+            echo "  Size: $(du -h "${SUMMARY_NAME}" | cut -f1)"
           fi
 
   #===========================================================================

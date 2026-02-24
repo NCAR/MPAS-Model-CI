@@ -63,11 +63,12 @@ jobs:
         with:
           name: exe-ect
 
-      - name: Download 120km test case
+      - name: Download test case
         shell: bash
         run: |
-          DATA_REPO="NCAR/mpas-ci-data"
-          ARCHIVE="120km.tar.gz"
+          source $GITHUB_WORKSPACE/.github/test-cases/ect-120km/config.env
+          DATA_REPO="${DATA_REPO}"
+          ARCHIVE="${RESOLUTION}.tar.gz"
           curl -fsSL "https://github.com/${DATA_REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
           tar xzf "${ARCHIVE}"
           CASE_DIR=$(tar tzf "${ARCHIVE}" 2>/dev/null | head -1 | cut -d/ -f1 || true)
@@ -108,7 +109,7 @@ jobs:
         shell: bash
         working-directory: run-ect-${{ matrix.member }}
         run: |
-          source $GITHUB_WORKSPACE/.github/test-cases/120km/config.env
+          source $GITHUB_WORKSPACE/.github/test-cases/ect-120km/config.env
           sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
           sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
           sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
@@ -176,8 +177,8 @@ jobs:
       - name: Download ensemble summary file
         id: summary
         run: |
-          DATA_REPO="NCAR/mpas-ci-data"
-          SUMMARY="mpas_ect_summary_120km.nc"
+          source .github/test-cases/ect-120km/config.env
+          SUMMARY="${ECT_SUMMARY_PREFIX}.nc"
           echo "Downloading ${SUMMARY} from ${DATA_REPO}..."
           HTTP_CODE=$(curl -sL -w "%{http_code}" \
             "https://github.com/${DATA_REPO}/raw/main/${SUMMARY}" \
@@ -191,6 +192,8 @@ jobs:
           fi
           echo "Downloaded summary file: $(du -h ${SUMMARY})"
           echo "available=true" >> $GITHUB_OUTPUT
+          echo "summary-file=${SUMMARY}" >> $GITHUB_OUTPUT
+          echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
 
       - name: Download history files
         if: steps.summary.outputs.available == 'true'
@@ -210,9 +213,9 @@ jobs:
         if: steps.summary.outputs.available == 'true'
         run: |
           python pycect/pyCECT.py \
-            --sumfile mpas_ect_summary_120km.nc \
+            --sumfile ${{ steps.summary.outputs.summary-file }} \
             --indir ect-test-files \
-            --tslice 3 \
+            --tslice ${{ steps.summary.outputs.tslice }} \
             --mpas \
             --verbose
 
