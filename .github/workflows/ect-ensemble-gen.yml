@@ -22,6 +22,11 @@ on:
         type: number
         required: false
         default: 10
+      num-ranks:
+        description: 'Number of MPI ranks per ensemble member'
+        type: number
+        required: false
+        default: 1
 
 jobs:
   #===========================================================================
@@ -163,9 +168,10 @@ jobs:
             sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
 
             # Run model (set +e: gfortran may exit non-zero on IEEE warnings)
-            echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, 1 rank)..."
+            NRANKS=${{ inputs.num-ranks || 1 }}
+            echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, ${NRANKS} ranks)..."
             set +e
-            timeout ${RUN_TIMEOUT}m mpirun -n 1 ./atmosphere_model
+            timeout ${RUN_TIMEOUT}m mpirun -n ${NRANKS} ./atmosphere_model
             RUN_STATUS=$?
             set -e
             echo "[$(date +%H:%M:%S)] Model finished (exit code ${RUN_STATUS})"
