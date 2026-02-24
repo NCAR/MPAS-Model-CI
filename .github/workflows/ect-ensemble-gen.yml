@@ -219,7 +219,7 @@ jobs:
         id: meta
         run: |
           source mpas-source/.github/test-cases/ect-120km/config.env
-          VERSION=$(grep -oP 'version="\K[^"]+' mpas-source/src/core_atmosphere/Registry.xml || echo "unknown")
+          VERSION=$(grep -oP '<registry.*version="\K[^"]+' mpas-source/src/core_atmosphere/Registry.xml || echo "unknown")
           DATE=$(date -u +%Y-%m-%d)
           SUMMARY_NAME="${ECT_SUMMARY_PREFIX}_v${VERSION}_${DATE//-/}.nc"
 
