@@ -111,7 +111,9 @@ jobs:
           source $GITHUB_WORKSPACE/.github/test-cases/120km/config.env
           sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
           sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
+          sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
           echo "Run duration: ${RUN_DURATION}"
+          echo "History interval: ${ECT_HISTORY_INTERVAL}"
 
       - name: Run MPAS-A
         shell: bash

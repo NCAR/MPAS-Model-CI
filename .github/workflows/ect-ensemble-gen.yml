@@ -154,10 +154,11 @@ jobs:
             fi
             python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${MEMBER}
 
-            # Configure namelist
+            # Configure namelist and streams
             cd "${RUNDIR}"
             sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
             sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
+            sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
 
             # Run model (set +e: gfortran may exit non-zero on IEEE warnings)
             set +e
@@ -166,7 +167,7 @@ jobs:
             set -e
 
             # Check for history file as the real success indicator
-            HIST_FILE=$(ls history.*.nc 2>/dev/null | tail -1)
+            HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
             if [ -n "${HIST_FILE}" ]; then
               cp "${HIST_FILE}" "../history-output/history.${MEMBER_ID}.nc"
               echo "Saved history file for member ${MEMBER_ID}"
