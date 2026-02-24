@@ -300,8 +300,8 @@ jobs:
 
           if [ ! -f "${SUMMARY_NAME}" ]; then
             echo "::error::pyEnsSumMPAS did not produce ${SUMMARY_NAME}."
-            echo "  PyCECT requires ensemble size >= number of output variables (~63)."
-            echo "  Current ensemble size: ${ESIZE}. Increase to at least 63 (recommended: 200)."
+            echo "  PyCECT requires ensemble size >= number of output variables (~47 after trimming)."
+            echo "  Current ensemble size: ${ESIZE}. Increase to at least 50 (recommended: 200)."
             exit 1
           fi
 
