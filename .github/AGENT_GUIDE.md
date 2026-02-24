@@ -12,11 +12,23 @@ The CI exists to support code health for a community model. Scientists and stude
 
 ## Repository Layout
 
-- `.github/actions/` — Reusable composite actions (build-mpas, run-mpas, validate-logs, perturb-ic)
+- `.github/actions/` — Reusable composite actions (build-mpas, run-mpas, download-testdata, validate-logs, perturb-ic)
 - `.github/workflows/` — GitHub Actions workflow definitions
 - `.github/workflows/validation/` — Python scripts for log comparison
 - `.github/test-cases/` — Test case configurations (`240km/`, `ect-120km/`), each with a `config.env`
 - `NCAR/mpas-ci-data` — External public repo (Git LFS) hosting test case archives and ECT summary files
+
+## Modularity
+
+Workflows must stay modular. Reusable logic belongs in composite actions under `.github/actions/`, not duplicated across workflow files. Current actions:
+
+- **build-mpas** — Compiles MPAS-A for a given compiler family. Build logic is inlined in the action, not in external shell scripts.
+- **download-testdata** — Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Reads `RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
+- **run-mpas** — Configures and runs MPAS-A (calls `download-testdata` internally).
+- **validate-logs** — Compares run logs against reference output.
+- **perturb-ic** — Applies small perturbations to initial conditions for ECT.
+
+When adding new functionality, check whether it should be a new composite action or belongs in an existing one. Do not put reusable shell logic in standalone `.sh` scripts under `.github/workflows/` — that pattern caused breakage when scripts were cleaned up but actions still referenced them. Keep all build, download, and run logic self-contained within actions.
 
 ## Container Environment
 
@@ -75,7 +87,8 @@ Two workflows:
 - `ect-test.yml` — Runs 3 members against an existing summary file (fast, used for validation)
 
 Key constraints:
-- **PyCECT requires ensemble size >= number of output variables** (~63 for the 120km case). The default of 200 members is recommended. The tool exits 0 even on failure — always verify the output file exists.
+- **PyCECT requires ensemble size >= number of output variables** (~47 after trimming for the 120km case; minimum 48). The default of 200 members is recommended. The tool exits 0 even on failure — always verify the output file exists.
+- History files are trimmed before upload: `trim_history.py` extracts a single time slice and removes variables listed in `ect_excluded_vars.txt` (PV diagnostics, integers, edge velocity). This keeps artifact sizes manageable for 200-member ensembles.
 - ECT configuration lives in `.github/test-cases/ect-120km/config.env`
 - Summary files are versioned and uploaded to `NCAR/mpas-ci-data` with metadata (requires `MPAS_CI_DATA_TOKEN` secret with repo scope)
 - The `output` stream in `streams.atmosphere` defaults to `output_interval="none"` — ECT workflows must override this via sed to produce history files
