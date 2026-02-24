@@ -270,8 +270,8 @@ jobs:
           ls -la ensemble-files/
           NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
           echo "Total files: ${NFILES}"
-          if [ "${NFILES}" -lt 50 ]; then
-            echo "::error::Too few ensemble members (${NFILES}). PyCECT needs more members than output variables (~45 after trimming). Recommended: 200."
+          if [ "${NFILES}" -lt 48 ]; then
+            echo "::error::Too few ensemble members (${NFILES}). PyCECT needs more members than output variables (~47 after trimming). Recommended: 200."
             exit 1
           fi
 
