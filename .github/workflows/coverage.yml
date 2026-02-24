@@ -7,9 +7,9 @@ name: Code Coverage
 on:
   workflow_dispatch:
   push:
-    branches: [master, feature-ci]
+    branches: [master, develop]
   pull_request:
-    branches: [master, feature-ci]
+    branches: [master, develop]
 
 jobs:
   coverage:

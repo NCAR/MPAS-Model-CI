@@ -61,3 +61,14 @@ stream_list.*
 *.i90
 
 src/core_*/inc
+
+# macOS metadata
+.DS_Store
+
+# Test case archives (hosted in NCAR/mpas-ci-data)
+.github/test-cases/*.tar.gz
+.github/workflows/*.tar.gz
+
+# Editor/IDE directories
+.vscode/
+.cursor/
