@@ -151,7 +151,7 @@ jobs:
             if [ ! -f "${IC_FILE}" ]; then
               IC_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
             fi
-            python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${MEMBER}
+            python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
 
             # Configure namelist and streams
             cd "${RUNDIR}"
@@ -299,10 +299,12 @@ jobs:
 
       - name: Upload summary artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: mpas-ect-summary
           path: ${{ steps.meta.outputs.summary-name }}
           retention-days: 90
+          if-no-files-found: warn
 
       - name: Push summary to mpas-ci-data
         if: success()

@@ -85,6 +85,7 @@ jobs:
       - name: Perturb initial conditions
         shell: bash
         run: |
+          source .github/test-cases/ect-120km/config.env
           IC_FILE="run-ect-${{ matrix.member }}/init.nc"
           if [ ! -f "${IC_FILE}" ]; then
             IC_FILE=$(ls run-ect-${{ matrix.member }}/*.init*.nc 2>/dev/null | head -1)
@@ -95,7 +96,7 @@ jobs:
             exit 1
           fi
           echo "Perturbing: ${IC_FILE}"
-          python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${{ matrix.member }}
+          python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${{ matrix.member }} --magnitude ${ECT_PERTURB_MAGNITUDE}
 
       - name: Configure namelist
         shell: bash
