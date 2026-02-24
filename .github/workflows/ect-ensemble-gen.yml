@@ -147,7 +147,8 @@ jobs:
             cp -r base-case "${RUNDIR}"
             ln -sf $(realpath atmosphere_model) "${RUNDIR}/atmosphere_model"
 
-            # Find and perturb initial conditions
+            # Perturb initial conditions
+            echo "[$(date +%H:%M:%S)] Perturbing initial conditions (seed=${MEMBER})..."
             IC_FILE="${RUNDIR}/init.nc"
             if [ ! -f "${IC_FILE}" ]; then
               IC_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
@@ -161,16 +162,18 @@ jobs:
             sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
 
             # Run model (set +e: gfortran may exit non-zero on IEEE warnings)
+            echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, 1 rank)..."
             set +e
             timeout ${RUN_TIMEOUT}m mpirun -n 1 ./atmosphere_model
             RUN_STATUS=$?
             set -e
+            echo "[$(date +%H:%M:%S)] Model finished (exit code ${RUN_STATUS})"
 
             # Check for history file as the real success indicator
             HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
             if [ -n "${HIST_FILE}" ]; then
               cp "${HIST_FILE}" "../history-output/history.${MEMBER_ID}.nc"
-              echo "Saved history file for member ${MEMBER_ID}"
+              echo "[$(date +%H:%M:%S)] Saved history file for member ${MEMBER_ID}"
             else
               echo "::warning::Member ${MEMBER_ID} failed (exit ${RUN_STATUS}, no history file)"
             fi
