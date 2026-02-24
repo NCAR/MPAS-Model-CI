@@ -2,8 +2,9 @@
 """
 Trim MPAS history files for ECT ensemble processing.
 
-Extracts a single time slice, removes excluded variables, and applies
-NetCDF4 compression to dramatically reduce file sizes for artifact storage.
+Extracts a single time slice and removes excluded variables to reduce
+file sizes for artifact storage. No compression is applied to avoid
+any risk of altering data in a validation pipeline.
 
 Usage:
     python3 trim_history.py input.nc output.nc --tslice 1 --exclude-file excluded_vars.txt
@@ -33,11 +34,7 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
                 continue
 
             dims = var.dimensions
-            use_compression = var.size > 1000
-            outvar = dst.createVariable(
-                name, var.dtype, dims,
-                zlib=use_compression, complevel=1
-            )
+            outvar = dst.createVariable(name, var.dtype, dims)
             outvar.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
 
             if 'Time' in dims:
