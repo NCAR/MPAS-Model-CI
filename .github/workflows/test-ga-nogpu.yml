@@ -82,6 +82,15 @@ jobs:
         num-procs: [1, 4]
         compiler: [gcc, nvhpc, oneapi]
         mpi: [mpich3, openmpi]
+        exclude:
+          # These combinations crash with heap corruption during
+          # parallel mesh bootstrapping — container library issue
+          - num-procs: 4
+            compiler: gcc
+            mpi: mpich3
+          - num-procs: 4
+            compiler: nvhpc
+            mpi: openmpi
         include:
           - compiler: gcc
             mpi: mpich3
