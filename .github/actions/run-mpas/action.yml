@@ -192,7 +192,7 @@ runs:
         # Set MPI flags
         MPI_FLAGS=""
         if [ "${MPI_IMPL}" = "openmpi" ]; then
-          MPI_FLAGS="--allow-run-as-root"
+          MPI_FLAGS="--allow-run-as-root --oversubscribe"
         fi
         
         # Set unlimited stack size
@@ -205,6 +205,8 @@ runs:
         echo "  MPI_IMPL: ${MPI_IMPL:-auto}"
         echo "  MPI_FLAGS: ${MPI_FLAGS}"
         echo "  Stack limit: $(ulimit -s)"
+        echo "  Available CPUs: $(nproc 2>/dev/null || echo unknown)"
+        echo "  Available RAM: $(free -m 2>/dev/null | awk '/^Mem:/{print $2 "MB"}' || echo unknown)"
         echo "  LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-not set}"
         
         # Run model
