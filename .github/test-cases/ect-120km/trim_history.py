@@ -2,9 +2,12 @@
 """
 Trim MPAS history files for ECT ensemble processing.
 
-Extracts a single time slice, removes excluded variables, strips static
-mesh geometry (identical across ensemble members), and applies lossless
-NetCDF4 deflation (zlib) to minimize artifact sizes.
+Extracts a single time slice, removes excluded variables, strips most
+static mesh geometry, and applies lossless NetCDF4 deflation (zlib).
+
+PyCECT requires three area-weighting variables (areaCell, dvEdge,
+areaTriangle) to compute global means. These static variables are
+preserved even though they lack a Time dimension.
 
 Usage:
     python3 trim_history.py input.nc output.nc --tslice 0 --exclude-file excluded_vars.txt
@@ -14,6 +17,10 @@ import argparse
 import os
 import netCDF4 as nc
 
+# Static variables PyCECT reads for area-weighted global means
+# (see pyEnsLib.py generate_global_mean_for_summary_MPAS, lines 745-758)
+PYCECT_REQUIRED_STATIC = {'areaCell', 'dvEdge', 'areaTriangle'}
+
 
 def trim_history(infile, outfile, tslice, exclude_vars=None):
     exclude = set(exclude_vars or [])
@@ -21,26 +28,37 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
     with nc.Dataset(infile, 'r') as src, nc.Dataset(outfile, 'w', format='NETCDF4') as dst:
         dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
 
-        # Copy ALL dimensions — PyCECT needs nCells/nEdges/nVertices
-        # even if no kept variable uses them. Dimensions are just
-        # header metadata and add negligible size.
+        # Copy ALL dimensions — PyCECT checks nCells/nEdges/nVertices
         for dname, dim in src.dimensions.items():
             if dname == 'Time':
                 dst.createDimension(dname, 1)
             else:
                 dst.createDimension(dname, len(dim))
 
-        # Identify which variables to keep (time-varying only)
-        keep = {}
+        # Identify variables to keep:
+        #   1. Time-varying variables not in the exclude list
+        #   2. Static variables required by PyCECT for area weighting
+        keep_dynamic = {}
+        keep_static = {}
         for name, var in src.variables.items():
             if name in exclude:
                 continue
-            if 'Time' not in var.dimensions:
-                continue
-            keep[name] = var
+            if 'Time' in var.dimensions:
+                keep_dynamic[name] = var
+            elif name in PYCECT_REQUIRED_STATIC:
+                keep_static[name] = var
 
         kept = 0
-        for name, var in keep.items():
+
+        # Write static variables (no time slicing needed)
+        for name, var in keep_static.items():
+            outvar = dst.createVariable(name, var.dtype, var.dimensions)
+            outvar.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
+            outvar[:] = var[:]
+            kept += 1
+
+        # Write time-varying variables (extract single time slice, compress)
+        for name, var in keep_dynamic.items():
             dims = var.dimensions
             use_zlib = var.size > 1000
             outvar = dst.createVariable(
@@ -58,9 +76,9 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
 
     in_size = os.path.getsize(infile) / 1048576
     out_size = os.path.getsize(outfile) / 1048576
-    print(f"Kept {kept} time-varying variables, dropped {skipped} "
-          f"(static mesh + excluded), tslice={tslice}, "
-          f"{in_size:.0f}MB -> {out_size:.0f}MB")
+    print(f"Kept {kept} variables ({len(keep_dynamic)} dynamic + "
+          f"{len(keep_static)} static), dropped {skipped}, "
+          f"tslice={tslice}, {in_size:.0f}MB -> {out_size:.0f}MB")
 
 
 if __name__ == '__main__':
