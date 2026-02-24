@@ -347,17 +347,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "${CURRENT_FILE}" "ect-summaries/${SUMMARY_NAME}" ect_summary_metadata.json
-          git commit -m "$(cat <<EOF
-Update ECT summary: MPAS v${VERSION} (${RESOLUTION})
+          MSG="Update ECT summary: MPAS v${VERSION} (${RESOLUTION})"
+          MSG="${MSG}
 
-Archived: ect-summaries/${SUMMARY_NAME}
-Branch:   ${BRANCH}
-Commit:   ${COMMIT}
-Ensemble: ${ESIZE} members
-Generated: ${DATE}
-Run:      ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-EOF
-          )"
+          Archived: ect-summaries/${SUMMARY_NAME}
+          Branch:   ${BRANCH}
+          Commit:   ${COMMIT}
+          Ensemble: ${ESIZE} members
+          Generated: ${DATE}
+          Run:      ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          git commit -m "${MSG}"
           git push
 
           echo "=== Pushed to ${DATA_REPO} ==="
