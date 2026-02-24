@@ -114,7 +114,7 @@ jobs:
         run: chmod +x atmosphere_model
 
       - name: Download test case
-        uses: ./.github/actions/download-testcase
+        uses: ./.github/actions/download-testdata
         with:
           test-case: ect-120km
           dest-dir: base-case

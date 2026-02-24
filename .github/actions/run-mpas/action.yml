@@ -102,7 +102,7 @@ runs:
         echo "  Work dir:   ${WORKDIR}"
 
     - name: Download test case
-      uses: ./.github/actions/download-testcase
+      uses: ./.github/actions/download-testdata
       id: download
       with:
         test-case: ${{ inputs.resolution }}

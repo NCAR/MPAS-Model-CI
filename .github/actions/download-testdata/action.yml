@@ -1,5 +1,5 @@
-name: 'Download Test Case'
-description: 'Download and extract an MPAS test case archive from the CI data repository'
+name: 'Download Test Data'
+description: 'Download and extract an MPAS test data archive from the CI data repository'
 
 inputs:
   test-case:
