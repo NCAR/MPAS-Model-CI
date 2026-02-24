@@ -266,8 +266,8 @@ jobs:
           ls -la ensemble-files/
           NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
           echo "Total files: ${NFILES}"
-          if [ "${NFILES}" -lt 10 ]; then
-            echo "::error::Too few ensemble members (${NFILES}). Need at least ~50 for a useful summary."
+          if [ "${NFILES}" -lt 63 ]; then
+            echo "::error::Too few ensemble members (${NFILES}). PyCECT needs more members than output variables (~63). Recommended: 200."
             exit 1
           fi
 
@@ -293,6 +293,13 @@ jobs:
             --verbose \
             --jsonfile pycect/empty_excluded.json \
             --mpi_disable
+
+          if [ ! -f "${SUMMARY_NAME}" ]; then
+            echo "::error::pyEnsSumMPAS did not produce ${SUMMARY_NAME}."
+            echo "  PyCECT requires ensemble size >= number of output variables (~63)."
+            echo "  Current ensemble size: ${ESIZE}. Increase to at least 63 (recommended: 200)."
+            exit 1
+          fi
 
       - name: Upload summary artifact
         uses: actions/upload-artifact@v4
