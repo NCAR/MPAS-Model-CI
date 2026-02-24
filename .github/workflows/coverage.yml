@@ -40,11 +40,14 @@ jobs:
           
           make gfortran CORE=atmosphere --jobs $(nproc)
 
-      - name: Download and run 240km test case
+      - name: Download test data
+        uses: ./.github/actions/download-testdata
+        with:
+          test-case: 240km
+
+      - name: Run 240km test case
         run: |
           source /container/config_env.sh
-          curl -fsSL "https://github.com/NCAR/mpas-ci-data/raw/main/240km.tar.gz" -o 240km.tar.gz
-          tar xzf 240km.tar.gz
           cd 240km
           ln -sf ../atmosphere_model .
           sed -i "s/config_run_duration = '[^']*'/config_run_duration = '0_00:30:00'/" namelist.atmosphere

@@ -10,6 +10,10 @@ on:
       - master
       - develop
 
+# Image pattern:
+#   nogpu: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-{mpi}:devel
+#   cuda:  ncarcisl/cisldev-x86_64-almalinux9-nvhpc-{mpi}-cuda:devel
+
 jobs:
   #===========================================================================
   # BUILD: All NVHPC configurations (CUDA and NoGPU)
@@ -19,76 +23,15 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        include:
-          # NVHPC NoGPU with MPICH
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: nogpu
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3:devel
-            build-target: nvhpc
-            openacc: false
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: nogpu
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3:devel
-            build-target: nvhpc
-            openacc: false
-          
-          # NVHPC NoGPU with OpenMPI
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: nogpu
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi:devel
-            build-target: nvhpc
-            openacc: false
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: nogpu
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi:devel
-            build-target: nvhpc
-            openacc: false
-
-          # NVHPC CUDA with MPICH
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: cuda
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3-cuda:devel
-            build-target: nvhpc
-            openacc: true
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: cuda
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3-cuda:devel
-            build-target: nvhpc
-            openacc: true
-          
-          # NVHPC CUDA with OpenMPI
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: cuda
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi-cuda:devel
-            build-target: nvhpc
-            openacc: true
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: cuda
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi-cuda:devel
-            build-target: nvhpc
-            openacc: true
+        mpi: [mpich3, openmpi]
+        gpu: [nogpu, cuda]
+        io: [smiol, pio]
 
     name: Build (${{ matrix.mpi }}, ${{ matrix.gpu }}, ${{ matrix.io }})
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ${{ matrix.image }}
+      image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -98,14 +41,14 @@ jobs:
       - name: Build MPAS-A
         uses: ./.github/actions/build-mpas
         with:
-          compiler: ${{ matrix.build-target }}
+          compiler: nvhpc
           use-pio: ${{ matrix.io == 'pio' }}
-          openacc: ${{ matrix.openacc }}
+          openacc: ${{ matrix.gpu == 'cuda' }}
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
+          name: exe-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
           path: atmosphere_model
           retention-days: 1
 
@@ -119,73 +62,21 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        include:
-          # NVHPC NoGPU with MPICH
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: nogpu
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3:devel
-            mpi-impl: mpich
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: nogpu
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3:devel
-            mpi-impl: mpich
-          
-          # NVHPC NoGPU with OpenMPI
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: nogpu
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi:devel
-            mpi-impl: openmpi
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: nogpu
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi:devel
-            mpi-impl: openmpi
-
-          # NVHPC CUDA with MPICH
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: cuda
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3-cuda:devel
-            mpi-impl: mpich
-          - compiler: nvhpc
-            mpi: mpich3
-            gpu: cuda
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3-cuda:devel
-            mpi-impl: mpich
-          
-          # NVHPC CUDA with OpenMPI
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: cuda
-            io: smiol
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi-cuda:devel
-            mpi-impl: openmpi
-          - compiler: nvhpc
-            mpi: openmpi
-            gpu: cuda
-            io: pio
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi-cuda:devel
-            mpi-impl: openmpi
+        mpi: [mpich3, openmpi]
+        gpu: [nogpu, cuda]
+        io: [smiol, pio]
 
     name: Run (${{ matrix.mpi }}, ${{ matrix.gpu }}, ${{ matrix.io }})
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ${{ matrix.image }}
+      image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Check GPU availability
+        if: matrix.gpu == 'cuda'
         run: |
           echo "=== GPU Information ==="
           nvidia-smi || echo "WARNING: nvidia-smi failed"
@@ -195,21 +86,21 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
+          name: exe-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
 
       - name: Run MPAS-A
         if: steps.download.outcome == 'success'
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
-          mpi-impl: ${{ matrix.mpi-impl }}
+          mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
           working-dir: run-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
         if: always() && steps.download.outcome == 'success'
         with:
-          name: logs-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
+          name: logs-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
           path: run-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}/log.*
           retention-days: 5
 
