@@ -9,12 +9,12 @@ inputs:
     description: 'Path to reference log file'
     required: false
     default: '.github/test-cases/240km/reference_log.atmosphere.0000.out'
-  validation-script:
-    description: 'Path to validation script'
-    required: false
-    default: '.github/actions/validate-logs/compare_logs.py'
   log-filter:
     description: 'Only validate log directories whose name contains this string'
+    required: false
+    default: ''
+  expected-configs:
+    description: 'Comma-separated list of expected config names; missing ones shown as NO_LOG'
     required: false
     default: ''
 
@@ -23,7 +23,7 @@ outputs:
     description: 'Validation status (pass/fail)'
     value: ${{ steps.validate.outputs.status }}
   summary:
-    description: 'Validation summary'
+    description: 'Validation summary line'
     value: ${{ steps.validate.outputs.summary }}
 
 runs:
@@ -35,7 +35,7 @@ runs:
         echo "=== Log artifacts ==="
         if [ -d "${{ inputs.logs-path }}" ]; then
           ls -la "${{ inputs.logs-path }}/"
-          find "${{ inputs.logs-path }}" -name "*.out" | head -20
+          find "${{ inputs.logs-path }}" -name "*.out" | sort | head -30
         else
           echo "WARNING: Logs directory not found: ${{ inputs.logs-path }}"
         fi
@@ -44,19 +44,33 @@ runs:
       id: validate
       shell: bash
       run: |
-        set +e
+        SCRIPT_DIR="${GITHUB_ACTION_PATH:-$(dirname "$0")}"
+        SCRIPT="${SCRIPT_DIR}/compare_logs.py"
+        if [ ! -f "${SCRIPT}" ]; then
+          SCRIPT=".github/actions/validate-logs/compare_logs.py"
+        fi
+
         FILTER_ARGS=""
         if [ -n "${{ inputs.log-filter }}" ]; then
           FILTER_ARGS="--filter ${{ inputs.log-filter }}"
         fi
-        python ${{ inputs.validation-script }} \
+
+        EXPECTED_ARGS=""
+        if [ -n "${{ inputs.expected-configs }}" ]; then
+          EXPECTED_ARGS="--expected ${{ inputs.expected-configs }}"
+        fi
+
+        set +e
+        python "${SCRIPT}" \
           "${{ inputs.logs-path }}" \
           "${{ inputs.reference-log }}" \
           --allow-missing \
-          ${FILTER_ARGS}
+          --summary-file "$GITHUB_STEP_SUMMARY" \
+          ${FILTER_ARGS} \
+          ${EXPECTED_ARGS}
         VALIDATE_STATUS=$?
         set -e
-        
+
         if [ $VALIDATE_STATUS -eq 0 ]; then
           echo "status=pass" >> $GITHUB_OUTPUT
           echo "summary=All validations passed" >> $GITHUB_OUTPUT

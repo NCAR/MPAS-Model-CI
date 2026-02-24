@@ -170,6 +170,13 @@ jobs:
           logs-path: logs
           log-filter: 1proc
           reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
+          expected-configs: >-
+            logs-1proc-gcc-mpich3-nogpu-smiol,
+            logs-1proc-gcc-openmpi-nogpu-smiol,
+            logs-1proc-nvhpc-mpich3-nogpu-smiol,
+            logs-1proc-nvhpc-openmpi-nogpu-smiol,
+            logs-1proc-oneapi-mpich3-nogpu-smiol,
+            logs-1proc-oneapi-openmpi-nogpu-smiol
 
       - name: Decomposition test — compare 4-proc logs against 1-proc logs
         shell: bash
@@ -177,7 +184,9 @@ jobs:
           python .github/actions/validate-logs/compare_logs.py \
             logs \
             --decomposition-test \
-            --allow-missing
+            --allow-missing \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
+            --expected "4proc vs 1proc: gcc-mpich3-nogpu-smiol,4proc vs 1proc: gcc-openmpi-nogpu-smiol,4proc vs 1proc: nvhpc-mpich3-nogpu-smiol,4proc vs 1proc: nvhpc-openmpi-nogpu-smiol,4proc vs 1proc: oneapi-mpich3-nogpu-smiol,4proc vs 1proc: oneapi-openmpi-nogpu-smiol"
 
   #===========================================================================
   # CLEANUP: Remove executable artifacts

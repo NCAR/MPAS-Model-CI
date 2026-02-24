@@ -244,6 +244,15 @@ jobs:
         uses: ./.github/actions/validate-logs
         with:
           logs-path: logs
+          expected-configs: >-
+            logs-nvhpc-mpich3-nogpu-smiol,
+            logs-nvhpc-mpich3-nogpu-pio,
+            logs-nvhpc-openmpi-nogpu-smiol,
+            logs-nvhpc-openmpi-nogpu-pio,
+            logs-nvhpc-mpich3-cuda-smiol,
+            logs-nvhpc-mpich3-cuda-pio,
+            logs-nvhpc-openmpi-cuda-smiol,
+            logs-nvhpc-openmpi-cuda-pio
 
       - name: No logs available
         if: steps.download-logs.outcome != 'success'
