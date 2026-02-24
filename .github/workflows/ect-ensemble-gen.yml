@@ -206,7 +206,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: src/core_atmosphere/Registry.xml
+          sparse-checkout: |
+            src/core_atmosphere/Registry.xml
+            .github/test-cases/ect-120km/config.env
           path: mpas-source
 
       - uses: actions/setup-python@v5
