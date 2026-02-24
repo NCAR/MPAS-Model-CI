@@ -9,6 +9,9 @@ on:
       - master
       - develop
 
+# Container image pattern: ncarcisl/cisldev-x86_64-almalinux9-{compiler}-{mpi}:devel
+# MPI flags: openmpi needs --allow-run-as-root --oversubscribe (handled by run-mpas)
+
 jobs:
   #===========================================================================
   # BUILD: All compiler/MPI combinations (nogpu only for GitHub runners)
@@ -17,41 +20,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # GCC builds
-          - compiler: gcc
-            mpi: mpich3
-            image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
-            build-target: gfortran
-          - compiler: gcc
-            mpi: openmpi
-            image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
-            build-target: gfortran
-          
-          # NVHPC builds (nogpu)
-          - compiler: nvhpc
-            mpi: mpich3
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3:devel
-            build-target: nvhpc
-          - compiler: nvhpc
-            mpi: openmpi
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi:devel
-            build-target: nvhpc
-          
-          # OneAPI builds
-          - compiler: oneapi
-            mpi: mpich3
-            image: ncarcisl/cisldev-x86_64-almalinux9-oneapi-mpich3:devel
-            build-target: intel
-          - compiler: oneapi
-            mpi: openmpi
-            image: ncarcisl/cisldev-x86_64-almalinux9-oneapi-openmpi:devel
-            build-target: intel
+        compiler: [gcc, nvhpc, oneapi]
+        mpi: [mpich3, openmpi]
 
     name: Build (${{ matrix.compiler }}, ${{ matrix.mpi }})
     runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.image }}
+      image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +36,7 @@ jobs:
       - name: Build MPAS-A
         uses: ./.github/actions/build-mpas
         with:
-          compiler: ${{ matrix.build-target }}
+          compiler: ${{ matrix.compiler }}
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
@@ -82,36 +57,11 @@ jobs:
         num-procs: [1, 4]
         compiler: [gcc, nvhpc, oneapi]
         mpi: [mpich3, openmpi]
-        include:
-          - compiler: gcc
-            mpi: mpich3
-            image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
-            mpi-impl: mpich
-          - compiler: gcc
-            mpi: openmpi
-            image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
-            mpi-impl: openmpi
-          - compiler: nvhpc
-            mpi: mpich3
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich3:devel
-            mpi-impl: mpich
-          - compiler: nvhpc
-            mpi: openmpi
-            image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-openmpi:devel
-            mpi-impl: openmpi
-          - compiler: oneapi
-            mpi: mpich3
-            image: ncarcisl/cisldev-x86_64-almalinux9-oneapi-mpich3:devel
-            mpi-impl: mpich
-          - compiler: oneapi
-            mpi: openmpi
-            image: ncarcisl/cisldev-x86_64-almalinux9-oneapi-openmpi:devel
-            mpi-impl: openmpi
 
     name: Run ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }})
     runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.image }}
+      image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -129,7 +79,7 @@ jobs:
         with:
           executable: ./atmosphere_model
           num-procs: ${{ matrix.num-procs }}
-          mpi-impl: ${{ matrix.mpi-impl }}
+          mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
           working-dir: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}
 
       - name: Upload logs

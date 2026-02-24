@@ -55,21 +55,11 @@ runs:
         # The container should set this, but we provide a fallback
         if [ -z "${COMPILER_FAMILY}" ]; then
           case "${{ inputs.compiler }}" in
-            gfortran|gnu)
-              export COMPILER_FAMILY="gcc"
-              ;;
-            nvhpc|nvfortran)
-              export COMPILER_FAMILY="nvhpc"
-              ;;
-            intel|ifx|ifort)
-              export COMPILER_FAMILY="oneapi"
-              ;;
-            llvm|flang)
-              export COMPILER_FAMILY="clang"
-              ;;
-            *)
-              export COMPILER_FAMILY="${{ inputs.compiler }}"
-              ;;
+            gcc|gfortran|gnu)   export COMPILER_FAMILY="gcc" ;;
+            nvhpc|nvfortran)    export COMPILER_FAMILY="nvhpc" ;;
+            oneapi|intel|ifx)   export COMPILER_FAMILY="oneapi" ;;
+            llvm|flang|clang)   export COMPILER_FAMILY="clang" ;;
+            *)                  export COMPILER_FAMILY="${{ inputs.compiler }}" ;;
           esac
         fi
         
