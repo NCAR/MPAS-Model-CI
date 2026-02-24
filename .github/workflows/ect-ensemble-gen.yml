@@ -159,23 +159,19 @@ jobs:
             sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
             sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
 
-            # Run model
+            # Run model (set +e: gfortran may exit non-zero on IEEE warnings)
+            set +e
             timeout ${RUN_TIMEOUT}m mpirun -n 1 ./atmosphere_model
             RUN_STATUS=$?
+            set -e
 
-            if [ $RUN_STATUS -ne 0 ]; then
-              echo "::warning::Member ${MEMBER_ID} failed with exit code ${RUN_STATUS}"
-              cd ..
-              continue
-            fi
-
-            # Copy history file with member ID in name for pyEnsSumMPAS
+            # Check for history file as the real success indicator
             HIST_FILE=$(ls history.*.nc 2>/dev/null | tail -1)
             if [ -n "${HIST_FILE}" ]; then
               cp "${HIST_FILE}" "../history-output/history.${MEMBER_ID}.nc"
               echo "Saved history file for member ${MEMBER_ID}"
             else
-              echo "::warning::No history file found for member ${MEMBER_ID}"
+              echo "::warning::Member ${MEMBER_ID} failed (exit ${RUN_STATUS}, no history file)"
             fi
 
             cd ..

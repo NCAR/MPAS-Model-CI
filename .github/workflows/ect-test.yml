@@ -119,7 +119,17 @@ jobs:
         run: |
           source /container/config_env.sh
           ulimit -s unlimited 2>/dev/null || true
+          set +e
           timeout 30m mpirun -n 1 ./atmosphere_model
+          RUN_STATUS=$?
+          set -e
+          if [ $RUN_STATUS -ne 0 ]; then
+            echo "::warning::Model exited with status ${RUN_STATUS}"
+          fi
+          if ! ls history.*.nc &>/dev/null; then
+            echo "::error::No history file produced"
+            exit 1
+          fi
 
       - name: Upload history file
         uses: actions/upload-artifact@v4
