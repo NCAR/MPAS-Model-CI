@@ -21,7 +21,7 @@ jobs:
     name: Build MPAS-A
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +53,7 @@ jobs:
     name: ECT member ${{ matrix.member }}
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -123,7 +123,7 @@ jobs:
           source /container/config_env.sh
           ulimit -s unlimited 2>/dev/null || true
           set +e
-          timeout 30m mpirun -n 1 ./atmosphere_model
+          timeout 30m mpirun --allow-run-as-root --oversubscribe -n 1 ./atmosphere_model
           RUN_STATUS=$?
           set -e
           if [ $RUN_STATUS -ne 0 ]; then

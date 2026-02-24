@@ -68,7 +68,7 @@ jobs:
     name: Build MPAS-A
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +100,7 @@ jobs:
     name: Members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -171,7 +171,7 @@ jobs:
             NRANKS=${{ inputs.num-ranks || 1 }}
             echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, ${NRANKS} ranks)..."
             set +e
-            timeout ${RUN_TIMEOUT}m mpirun -n ${NRANKS} ./atmosphere_model
+            timeout ${RUN_TIMEOUT}m mpirun --allow-run-as-root --oversubscribe -n ${NRANKS} ./atmosphere_model
             RUN_STATUS=$?
             set -e
             echo "[$(date +%H:%M:%S)] Model finished (exit code ${RUN_STATUS})"
