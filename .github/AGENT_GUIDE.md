@@ -2,7 +2,7 @@
 
 ## What is MPAS?
 
-MPAS (Model for Prediction Across Scales) is a community atmospheric model used for weather forecasting and climate research. Its outputs inform decisions that protect lives and property. Scientific validity is non-negotiable — every CI change must preserve the correctness of model results.
+MPAS (Model for Prediction Across Scales) is a community atmospheric model used for weather forecasting. Its outputs inform decisions that protect lives and property. Scientific validity is non-negotiable — every CI change must preserve the correctness of model results and not hide failures.
 
 MPAS has been maintained with consistent coding conventions and project structure over many years. Follow the style of existing code. Do not introduce patterns, naming conventions, or organizational choices that diverge from what is already in the repository.
 
@@ -39,7 +39,7 @@ Key facts about these containers:
 | oneapi | openmpi | pass | pass | Needs `--allow-run-as-root --oversubscribe` |
 | oneapi | mpich3 | pass | pass | |
 
-The gcc/mpich3 and nvhpc/openmpi 4-proc failures are container library issues, not MPAS bugs. They crash with glibc heap corruption during SMIOL parallel I/O initialization. All combinations pass at 1 rank.
+The gcc/mpich3 and nvhpc/openmpi 4-proc failures are maybe container library issues, not MPAS bugs. They crash with glibc heap corruption during SMIOL parallel I/O initialization. All combinations pass at 1 rank.
 
 **ECT workflows use gcc/openmpi** because it works at both 1 and 4 ranks with gfortran.
 
