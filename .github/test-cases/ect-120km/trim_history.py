@@ -19,13 +19,18 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
     exclude = set(exclude_vars or [])
 
     with nc.Dataset(infile, 'r') as src, nc.Dataset(outfile, 'w', format='NETCDF4') as dst:
-        # Only create dimensions that appear in kept variables.
-        # We'll add them lazily below.
-        needed_dims = set()
-
         dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
 
-        # First pass: identify which variables to keep (time-varying only)
+        # Copy ALL dimensions — PyCECT needs nCells/nEdges/nVertices
+        # even if no kept variable uses them. Dimensions are just
+        # header metadata and add negligible size.
+        for dname, dim in src.dimensions.items():
+            if dname == 'Time':
+                dst.createDimension(dname, 1)
+            else:
+                dst.createDimension(dname, len(dim))
+
+        # Identify which variables to keep (time-varying only)
         keep = {}
         for name, var in src.variables.items():
             if name in exclude:
@@ -33,14 +38,6 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
             if 'Time' not in var.dimensions:
                 continue
             keep[name] = var
-            needed_dims.update(var.dimensions)
-
-        # Create only the dimensions used by kept variables
-        for dname in needed_dims:
-            if dname == 'Time':
-                dst.createDimension(dname, 1)
-            else:
-                dst.createDimension(dname, len(src.dimensions[dname]))
 
         kept = 0
         for name, var in keep.items():
