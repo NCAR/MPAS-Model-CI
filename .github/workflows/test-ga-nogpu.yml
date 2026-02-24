@@ -174,7 +174,7 @@ jobs:
       - name: Decomposition test — compare 4-proc logs against 1-proc logs
         shell: bash
         run: |
-          python .github/workflows/validation/compare_logs.py \
+          python .github/actions/validate-logs/compare_logs.py \
             logs \
             --decomposition-test \
             --allow-missing

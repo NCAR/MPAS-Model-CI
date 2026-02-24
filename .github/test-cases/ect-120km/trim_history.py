@@ -48,7 +48,7 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
             kept += 1
 
         print(f"Kept {kept} variables, excluded {skipped}, "
-              f"time slice {tslice}, compression enabled")
+              f"time slice {tslice}")
 
 
 if __name__ == '__main__':

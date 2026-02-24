@@ -12,7 +12,7 @@ inputs:
   validation-script:
     description: 'Path to validation script'
     required: false
-    default: '.github/workflows/validation/compare_logs.py'
+    default: '.github/actions/validate-logs/compare_logs.py'
   log-filter:
     description: 'Only validate log directories whose name contains this string'
     required: false
