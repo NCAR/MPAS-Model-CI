@@ -114,18 +114,10 @@ jobs:
         run: chmod +x atmosphere_model
 
       - name: Download test case
-        shell: bash
-        run: |
-          source $GITHUB_WORKSPACE/.github/test-cases/ect-120km/config.env
-          DATA_REPO="${DATA_REPO}"
-          ARCHIVE="${RESOLUTION}.tar.gz"
-          curl -fsSL "https://github.com/${DATA_REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
-          tar xzf "${ARCHIVE}"
-          CASE_DIR=$(tar tzf "${ARCHIVE}" 2>/dev/null | head -1 | cut -d/ -f1 || true)
-          if [ -z "${CASE_DIR}" ]; then
-            CASE_DIR=$(ls -td */ 2>/dev/null | head -1 | tr -d '/')
-          fi
-          mv "${CASE_DIR}" base-case
+        uses: ./.github/actions/download-testcase
+        with:
+          test-case: ect-120km
+          dest-dir: base-case
 
       - name: Install Python dependencies
         shell: bash

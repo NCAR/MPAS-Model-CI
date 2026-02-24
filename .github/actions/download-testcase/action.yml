@@ -1,0 +1,69 @@
+name: 'Download Test Case'
+description: 'Download and extract an MPAS test case archive from the CI data repository'
+
+inputs:
+  test-case:
+    description: 'Test case name (matches a folder in .github/test-cases/)'
+    required: true
+  dest-dir:
+    description: 'Destination directory name for the extracted test case'
+    required: false
+    default: ''
+  data-repo:
+    description: 'GitHub repository hosting the test case data'
+    required: false
+    default: ''
+
+outputs:
+  case-dir:
+    description: 'Path to the extracted test case directory'
+    value: ${{ steps.extract.outputs.case-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Download and extract test case
+      id: extract
+      shell: bash
+      run: |
+        TEST_CASE="${{ inputs.test-case }}"
+        CONFIG_FILE="${GITHUB_WORKSPACE}/.github/test-cases/${TEST_CASE}/config.env"
+
+        if [ ! -f "${CONFIG_FILE}" ]; then
+          echo "::error::Config not found: ${CONFIG_FILE}"
+          exit 1
+        fi
+        source "${CONFIG_FILE}"
+
+        REPO="${{ inputs.data-repo }}"
+        REPO="${REPO:-${DATA_REPO}}"
+        ARCHIVE="${RESOLUTION}.tar.gz"
+        DEST="${{ inputs.dest-dir }}"
+
+        if [ ! -f "${ARCHIVE}" ]; then
+          echo "Downloading ${ARCHIVE} from ${REPO}..."
+          curl -fsSL "https://github.com/${REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+          echo "Downloaded $(du -h "${ARCHIVE}" | cut -f1)"
+        else
+          echo "Archive ${ARCHIVE} already present"
+        fi
+
+        tar xzf "${ARCHIVE}"
+
+        CASE_DIR=$(tar tzf "${ARCHIVE}" 2>/dev/null | head -1 | cut -d/ -f1 || true)
+        if [ -z "${CASE_DIR}" ]; then
+          CASE_DIR=$(ls -td */ 2>/dev/null | head -1 | tr -d '/')
+        fi
+
+        if [ -z "${CASE_DIR}" ] || [ ! -d "${CASE_DIR}" ]; then
+          echo "::error::Failed to extract test case from ${ARCHIVE}"
+          exit 1
+        fi
+
+        if [ -n "${DEST}" ] && [ "${DEST}" != "${CASE_DIR}" ]; then
+          mv "${CASE_DIR}" "${DEST}"
+          CASE_DIR="${DEST}"
+        fi
+
+        echo "case-dir=${CASE_DIR}" >> $GITHUB_OUTPUT
+        echo "Extracted test case to: ${CASE_DIR}"
