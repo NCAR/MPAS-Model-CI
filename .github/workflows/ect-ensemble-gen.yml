@@ -179,8 +179,12 @@ jobs:
             # Check for history file as the real success indicator
             HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
             if [ -n "${HIST_FILE}" ]; then
-              cp "${HIST_FILE}" "../history-output/history.${MEMBER_ID}.nc"
-              echo "[$(date +%H:%M:%S)] Saved history file for member ${MEMBER_ID}"
+              # Trim: extract target time slice, remove excluded vars, compress
+              python3 $GITHUB_WORKSPACE/.github/test-cases/ect-120km/trim_history.py \
+                "${HIST_FILE}" "../history-output/history.${MEMBER_ID}.nc" \
+                --tslice ${ECT_RAW_TSLICE} \
+                --exclude-file $GITHUB_WORKSPACE/.github/test-cases/ect-120km/ect_excluded_vars.txt
+              echo "[$(date +%H:%M:%S)] Saved trimmed history for member ${MEMBER_ID}"
             else
               echo "::warning::Member ${MEMBER_ID} failed (exit ${RUN_STATUS}, no history file)"
             fi
@@ -266,8 +270,8 @@ jobs:
           ls -la ensemble-files/
           NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
           echo "Total files: ${NFILES}"
-          if [ "${NFILES}" -lt 63 ]; then
-            echo "::error::Too few ensemble members (${NFILES}). PyCECT needs more members than output variables (~63). Recommended: 200."
+          if [ "${NFILES}" -lt 50 ]; then
+            echo "::error::Too few ensemble members (${NFILES}). PyCECT needs more members than output variables (~45 after trimming). Recommended: 200."
             exit 1
           fi
 

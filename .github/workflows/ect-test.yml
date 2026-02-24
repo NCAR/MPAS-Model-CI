@@ -134,6 +134,19 @@ jobs:
             exit 1
           fi
 
+      - name: Trim history file
+        shell: bash
+        run: |
+          source .github/test-cases/ect-120km/config.env
+          HIST_FILE=$(ls -t run-ect-${{ matrix.member }}/history.*.nc 2>/dev/null | head -1 || true)
+          if [ -n "${HIST_FILE}" ]; then
+            python3 .github/test-cases/ect-120km/trim_history.py \
+              "${HIST_FILE}" "run-ect-${{ matrix.member }}/history.trimmed.nc" \
+              --tslice ${ECT_RAW_TSLICE} \
+              --exclude-file .github/test-cases/ect-120km/ect_excluded_vars.txt
+            mv "run-ect-${{ matrix.member }}/history.trimmed.nc" "${HIST_FILE}"
+          fi
+
       - name: Upload history file
         uses: actions/upload-artifact@v4
         if: always()
