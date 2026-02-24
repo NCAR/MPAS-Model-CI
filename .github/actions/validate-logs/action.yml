@@ -60,14 +60,18 @@ runs:
           EXPECTED_ARGS="--expected ${{ inputs.expected-configs }}"
         fi
 
+        ARGS=("${SCRIPT}" "${{ inputs.logs-path }}" "${{ inputs.reference-log }}")
+        ARGS+=(--allow-missing --summary-file "$GITHUB_STEP_SUMMARY")
+
+        if [ -n "${{ inputs.log-filter }}" ]; then
+          ARGS+=(--filter "${{ inputs.log-filter }}")
+        fi
+        if [ -n "${{ inputs.expected-configs }}" ]; then
+          ARGS+=(--expected "${{ inputs.expected-configs }}")
+        fi
+
         set +e
-        python "${SCRIPT}" \
-          "${{ inputs.logs-path }}" \
-          "${{ inputs.reference-log }}" \
-          --allow-missing \
-          --summary-file "$GITHUB_STEP_SUMMARY" \
-          ${FILTER_ARGS} \
-          ${EXPECTED_ARGS}
+        python "${ARGS[@]}"
         VALIDATE_STATUS=$?
         set -e
 
