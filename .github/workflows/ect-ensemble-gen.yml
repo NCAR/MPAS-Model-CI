@@ -203,9 +203,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: src/core_atmosphere/Registry.xml
+          path: mpas-source
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Collect metadata
+        id: meta
+        run: |
+          VERSION=$(grep -oP 'version="\K[^"]+' mpas-source/src/core_atmosphere/Registry.xml || echo "unknown")
+          echo "mpas-version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "branch=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          echo "commit=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          echo "date=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          echo "resolution=120km" >> $GITHUB_OUTPUT
+          echo "ensemble-size=${{ needs.prepare.outputs.ensemble-size }}" >> $GITHUB_OUTPUT
+
+          echo "=== ECT Metadata ==="
+          echo "  MPAS version: ${VERSION}"
+          echo "  Branch:       ${GITHUB_REF_NAME}"
+          echo "  Commit:       ${GITHUB_SHA::8}"
+          echo "  Resolution:   120km"
+          echo "  Ensemble:     ${{ needs.prepare.outputs.ensemble-size }} members"
 
       - name: Install dependencies
         run: pip install numpy scipy netCDF4
@@ -252,26 +275,87 @@ jobs:
             --jsonfile pycect/empty_excluded.json \
             --mpi_disable
 
-      - name: Upload summary file
+      - name: Upload summary artifact
         uses: actions/upload-artifact@v4
         with:
           name: mpas-ect-summary
           path: mpas_ect_summary_120km.nc
           retention-days: 90
 
+      - name: Push summary to mpas-ci-data
+        if: success()
+        env:
+          CI_DATA_TOKEN: ${{ secrets.MPAS_CI_DATA_TOKEN }}
+        run: |
+          if [ -z "${CI_DATA_TOKEN}" ]; then
+            echo "::warning::MPAS_CI_DATA_TOKEN secret not set — skipping upload to mpas-ci-data."
+            echo "Set a PAT with repo scope as MPAS_CI_DATA_TOKEN to enable automatic upload."
+            exit 0
+          fi
+
+          SUMMARY_FILE="mpas_ect_summary_120km.nc"
+          DATA_REPO="NCAR/mpas-ci-data"
+          VERSION="${{ steps.meta.outputs.mpas-version }}"
+          BRANCH="${{ steps.meta.outputs.branch }}"
+          COMMIT="${{ steps.meta.outputs.commit }}"
+          DATE="${{ steps.meta.outputs.date }}"
+          ESIZE="${{ steps.meta.outputs.ensemble-size }}"
+          RESOLUTION="${{ steps.meta.outputs.resolution }}"
+
+          git clone "https://x-access-token:${CI_DATA_TOKEN}@github.com/${DATA_REPO}.git" ci-data
+          cp "${SUMMARY_FILE}" ci-data/
+
+          python3 -c "
+          import json, sys
+          json.dump({
+              'summary_file': '${SUMMARY_FILE}',
+              'mpas_version': '${VERSION}',
+              'branch': '${BRANCH}',
+              'commit': '${COMMIT}',
+              'resolution': '${RESOLUTION}',
+              'ensemble_size': int('${ESIZE}'),
+              'generated': '${DATE}',
+              'pycect_tslice': 3,
+              'workflow_run': '${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}'
+          }, open('ci-data/ect_summary_metadata.json', 'w'), indent=2)
+          "
+
+          cd ci-data
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${SUMMARY_FILE}" ect_summary_metadata.json
+          git commit -m "$(cat <<EOF
+Update ECT summary: MPAS v${VERSION} (${RESOLUTION})
+
+Branch:    ${BRANCH}
+Commit:    ${COMMIT}
+Ensemble:  ${ESIZE} members
+Generated: ${DATE}
+Run:       ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+EOF
+          )"
+          git push
+
+          echo "=== Pushed summary to ${DATA_REPO} ==="
+
       - name: Summary
+        if: always()
         run: |
           echo "=========================================="
           echo "  ECT Ensemble Summary Generated"
           echo "=========================================="
           echo ""
-          echo "File: mpas_ect_summary_120km.nc"
-          echo "Size: $(du -h mpas_ect_summary_120km.nc | cut -f1)"
+          echo "  MPAS version:  ${{ steps.meta.outputs.mpas-version }}"
+          echo "  Branch:        ${{ steps.meta.outputs.branch }}"
+          echo "  Commit:        ${{ steps.meta.outputs.commit }}"
+          echo "  Resolution:    ${{ steps.meta.outputs.resolution }}"
+          echo "  Ensemble size: ${{ steps.meta.outputs.ensemble-size }}"
+          echo "  Date:          ${{ steps.meta.outputs.date }}"
           echo ""
-          echo "To use this summary file for ECT testing:"
-          echo "  1. Download the 'mpas-ect-summary' artifact"
-          echo "  2. Upload it to NCAR/mpas-ci-data as mpas_ect_summary_120km.nc"
-          echo "  3. The ect-test.yml workflow will automatically use it"
+          if [ -f mpas_ect_summary_120km.nc ]; then
+            echo "  File: mpas_ect_summary_120km.nc"
+            echo "  Size: $(du -h mpas_ect_summary_120km.nc | cut -f1)"
+          fi
 
   #===========================================================================
   # CLEANUP
