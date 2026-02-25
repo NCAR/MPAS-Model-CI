@@ -278,6 +278,12 @@ jobs:
             ESIZE=${NFILES}
           fi
 
+          # PyCECT writes auto-detected exclusions to NEW.<jsonfile>.
+          # The file must be in the working directory — a subdirectory path
+          # like pycect/foo.json produces NEW.pycect/foo.json which fails.
+          JSONFILE=ect_pycect_exclude.json
+          cp mpas-source/.github/test-cases/ect-120km/${JSONFILE} .
+
           python pycect/pyEnsSumMPAS.py \
             --esize ${ESIZE} \
             --indir ensemble-files \
@@ -287,7 +293,7 @@ jobs:
             --model mpas \
             --mach github-actions \
             --verbose \
-            --jsonfile pycect/empty_excluded.json \
+            --jsonfile ${JSONFILE} \
             --mpi_disable
 
           if [ ! -f "${SUMMARY_NAME}" ]; then

@@ -89,6 +89,8 @@ Two workflows:
 Key constraints:
 - **PyCECT requires ensemble size >= number of output variables** (~47 after trimming for the 120km case; minimum 48). The default of 200 members is recommended. The tool exits 0 even on failure — always verify the output file exists.
 - History files are trimmed before upload: `trim_history.py` extracts a single time slice and removes variables listed in `ect_excluded_vars.txt` (PV diagnostics, integers, edge velocity). This keeps artifact sizes manageable for 200-member ensembles.
+- **PyCECT `--jsonfile` path pitfall**: `pyEnsSumMPAS.py` writes auto-detected exclusions to `NEW.<jsonfile>`. If `--jsonfile` includes a directory (e.g., `pycect/exclude.json`), it tries to create `NEW.pycect/exclude.json` — a nonexistent directory — and crashes. Always pass a filename in the working directory, not a subdirectory path.
+- **ECT perturbation magnitude**: 1e-8 is too small (produces identical outputs, PyCECT gets zero variance). 1e-1 is too large (causes NaN divergence). 1e-4 works: enough spread for PyCECT statistics while keeping the model stable.
 - ECT configuration lives in `.github/test-cases/ect-120km/config.env`
 - Summary files are versioned and uploaded to `NCAR/mpas-ci-data` with metadata (requires `MPAS_CI_DATA_TOKEN` secret with repo scope)
 - The `output` stream in `streams.atmosphere` defaults to `output_interval="none"` — ECT workflows must override this via sed to produce history files
