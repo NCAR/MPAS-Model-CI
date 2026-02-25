@@ -153,6 +153,10 @@ runs:
         MPI_FLAGS=""
         if [ "${MPI_IMPL}" = "openmpi" ]; then
           MPI_FLAGS="--allow-run-as-root --oversubscribe"
+        elif [ "${MPI_IMPL}" = "mpich" ]; then
+          # Prevent yaksa from trying to initialize CUDA when only stub
+          # libraries are present. OpenACC GPU computation is unaffected.
+          export MPICH_GPU_SUPPORT_ENABLED=0
         fi
         
         # Set unlimited stack size
