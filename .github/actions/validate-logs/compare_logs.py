@@ -189,8 +189,11 @@ def summarize_results(results, allow_missing=False):
     print(f"\nSummary: {summary}")
 
     if allow_missing:
-        if n_failed > 0 or n_differ > 0:
+        if n_differ > 0:
             return 1, summary
+        if n_failed > 0:
+            print(f"Note: {n_failed} configuration(s) failed "
+                  "(--allow-missing is set, not treated as failure)")
         if n_no_log > 0:
             print(f"Note: {n_no_log} configuration(s) had no log files "
                   "(--allow-missing is set, not treated as failure)")
