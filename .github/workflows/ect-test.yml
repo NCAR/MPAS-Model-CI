@@ -175,7 +175,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install PyCECT
-        run: pip install numpy scipy netCDF4 mpi4py
+        run: pip install numpy scipy netCDF4
 
       - name: Clone PyCECT
         run: git clone --depth 1 https://github.com/NCAR/PyCECT.git pycect
@@ -218,12 +218,32 @@ jobs:
       - name: Run PyCECT
         if: steps.summary.outputs.available == 'true'
         run: |
+          # pyCECT always exits 0 — capture output and check for PASSED/FAILED
+          set +e
           python pycect/pyCECT.py \
             --sumfile ${{ steps.summary.outputs.summary-file }} \
             --indir ect-test-files \
             --tslice ${{ steps.summary.outputs.tslice }} \
             --mpas \
-            --verbose
+            --verbose \
+            2>&1 | tee pycect_output.txt
+          PYCECT_STATUS=$?
+          set -e
+
+          if [ $PYCECT_STATUS -ne 0 ]; then
+            echo "::error::pyCECT crashed with exit code ${PYCECT_STATUS}"
+            exit 1
+          fi
+
+          if grep -qF '****PASSED****' pycect_output.txt; then
+            echo "::notice::ECT result: PASSED"
+          elif grep -qF '****FAILED****' pycect_output.txt; then
+            echo "::error::ECT result: FAILED — code changes may have altered model output beyond internal variability"
+            exit 1
+          else
+            echo "::warning::Could not determine ECT result from pyCECT output"
+            exit 1
+          fi
 
       - name: Skip notice
         if: steps.summary.outputs.available != 'true'
