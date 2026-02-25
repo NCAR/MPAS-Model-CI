@@ -2,6 +2,7 @@ MPAS-v8.3.1
 ====
 
 [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI)
+[![ECT](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/ect-test.yml/badge.svg?branch=master)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/ect-test.yml)
 
 The Model for Prediction Across Scales (MPAS) is a collaborative project for
 developing atmosphere, ocean, and other earth-system simulation components for

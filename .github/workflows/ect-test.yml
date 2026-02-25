@@ -11,6 +11,8 @@
 name: Ensemble Consistency Test (ECT)
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 jobs:
@@ -176,7 +178,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install PyCECT
-        run: pip install numpy scipy netCDF4
+        run: pip install "numpy<2" scipy netCDF4
 
       - name: Clone PyCECT
         run: git clone --depth 1 https://github.com/NCAR/PyCECT.git pycect
