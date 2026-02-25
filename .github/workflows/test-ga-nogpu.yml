@@ -22,8 +22,9 @@ jobs:
       matrix:
         compiler: [gcc, nvhpc, oneapi]
         mpi: [mpich3, openmpi]
+        io: [smiol, pio]
 
-    name: Build (${{ matrix.compiler }}, ${{ matrix.mpi }})
+    name: Build (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
       image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
@@ -37,11 +38,12 @@ jobs:
         uses: ./.github/actions/build-mpas
         with:
           compiler: ${{ matrix.compiler }}
+          use-pio: ${{ matrix.io == 'pio' }}
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-smiol
+          name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-${{ matrix.io }}
           path: atmosphere_model
           retention-days: 1
 
@@ -57,8 +59,9 @@ jobs:
         num-procs: [1, 4]
         compiler: [gcc, nvhpc, oneapi]
         mpi: [mpich3, openmpi]
+        io: [smiol, pio]
 
-    name: Run ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }})
+    name: Run ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
       image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
@@ -71,7 +74,7 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-smiol
+          name: exe-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-${{ matrix.io }}
 
       - name: Run MPAS-A
         if: steps.download.outcome == 'success'
@@ -80,14 +83,14 @@ jobs:
           executable: ./atmosphere_model
           num-procs: ${{ matrix.num-procs }}
           mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
-          working-dir: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}
+          working-dir: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
         if: always() && steps.download.outcome == 'success'
         with:
-          name: logs-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-smiol
-          path: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}/log.*
+          name: logs-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}-nogpu-${{ matrix.io }}
+          path: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}/log.*
           retention-days: 5
 
   #===========================================================================
@@ -114,19 +117,35 @@ jobs:
           pattern: logs-*
           path: logs
 
+      - name: Generate expected config lists
+        id: expected
+        shell: bash
+        run: |
+          COMPILERS=(gcc nvhpc oneapi)
+          MPIS=(mpich3 openmpi)
+          IOS=(smiol pio)
+
+          REF_LIST=""
+          DECOMP_LIST=""
+          for compiler in "${COMPILERS[@]}"; do
+            for mpi in "${MPIS[@]}"; do
+              for io in "${IOS[@]}"; do
+                REF_LIST="${REF_LIST:+${REF_LIST},}logs-1proc-${compiler}-${mpi}-nogpu-${io}"
+                DECOMP_LIST="${DECOMP_LIST:+${DECOMP_LIST},}4proc vs 1proc: ${compiler}-${mpi}-nogpu-${io}"
+              done
+            done
+          done
+
+          echo "ref=${REF_LIST}" >> $GITHUB_OUTPUT
+          echo "decomp=${DECOMP_LIST}" >> $GITHUB_OUTPUT
+
       - name: Validate 1-proc logs against reference
         uses: ./.github/actions/validate-logs
         with:
           logs-path: logs
           log-filter: 1proc
           reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
-          expected-configs: >-
-            logs-1proc-gcc-mpich3-nogpu-smiol,
-            logs-1proc-gcc-openmpi-nogpu-smiol,
-            logs-1proc-nvhpc-mpich3-nogpu-smiol,
-            logs-1proc-nvhpc-openmpi-nogpu-smiol,
-            logs-1proc-oneapi-mpich3-nogpu-smiol,
-            logs-1proc-oneapi-openmpi-nogpu-smiol
+          expected-configs: ${{ steps.expected.outputs.ref }}
 
       - name: Decomposition test — compare 4-proc logs against 1-proc logs
         shell: bash
@@ -136,7 +155,7 @@ jobs:
             --decomposition-test \
             --allow-missing \
             --summary-file "$GITHUB_STEP_SUMMARY" \
-            --expected "4proc vs 1proc: gcc-mpich3-nogpu-smiol,4proc vs 1proc: gcc-openmpi-nogpu-smiol,4proc vs 1proc: nvhpc-mpich3-nogpu-smiol,4proc vs 1proc: nvhpc-openmpi-nogpu-smiol,4proc vs 1proc: oneapi-mpich3-nogpu-smiol,4proc vs 1proc: oneapi-openmpi-nogpu-smiol"
+            --expected "${{ steps.expected.outputs.decomp }}"
 
   #===========================================================================
   # CLEANUP: Remove executable artifacts
