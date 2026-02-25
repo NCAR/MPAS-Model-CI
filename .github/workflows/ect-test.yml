@@ -133,11 +133,12 @@ jobs:
           source .github/test-cases/ect-120km/config.env
           HIST_FILE=$(ls -t run-ect-${{ matrix.member }}/history.*.nc 2>/dev/null | head -1 || true)
           if [ -n "${HIST_FILE}" ]; then
+            # Output with member ID in filename — all members produce the
+            # same timestamp-based name, and merge-multiple would overwrite
             python3 .github/test-cases/ect-120km/trim_history.py \
-              "${HIST_FILE}" "run-ect-${{ matrix.member }}/history.trimmed.nc" \
+              "${HIST_FILE}" "run-ect-${{ matrix.member }}/history.member${{ matrix.member }}.nc" \
               --tslice ${ECT_RAW_TSLICE} \
               --exclude-file .github/test-cases/ect-120km/ect_excluded_vars.txt
-            mv "run-ect-${{ matrix.member }}/history.trimmed.nc" "${HIST_FILE}"
           fi
 
       - name: Upload history file
@@ -145,7 +146,7 @@ jobs:
         if: always()
         with:
           name: ect-history-${{ matrix.member }}
-          path: run-ect-${{ matrix.member }}/history.*.nc
+          path: run-ect-${{ matrix.member }}/history.member*.nc
           retention-days: 1
 
       - name: Upload log files
