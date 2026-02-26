@@ -26,7 +26,7 @@ on:
         description: 'Number of MPI ranks per ensemble member'
         type: number
         required: false
-        default: 1
+        default: 4
 
 jobs:
   #===========================================================================
@@ -116,6 +116,8 @@ jobs:
         with:
           executable: ./atmosphere_model
           resolution: ect-120km
+          num-procs: '4'
+          mpi-impl: 'openmpi'
           run-duration: '1_00:00:00'
           restart-interval: '1_00:00:00'
           run-timeout: '350'
@@ -183,7 +185,7 @@ jobs:
           executable: ./atmosphere_model
           member-start: ${{ matrix.batch.start }}
           member-end: ${{ matrix.batch.end }}
-          num-ranks: ${{ inputs.num-ranks || 1 }}
+          num-ranks: ${{ inputs.num-ranks || 4 }}
           restart-file: spinup-restart.nc
 
       - name: Upload history files

@@ -67,6 +67,10 @@ runs:
         TIMEOUT="20"
         
         # Load from config.env if it exists
+        # Note: save RESOLUTION first — config.env may define its own
+        # RESOLUTION (e.g. "120km") which would clobber the input
+        # value (e.g. "ect-120km") used for directory naming.
+        INPUT_RESOLUTION="${RESOLUTION}"
         if [ -f "${CONFIG_FILE}" ]; then
           echo "Loading config from ${CONFIG_FILE}"
           source "${CONFIG_FILE}"
@@ -74,6 +78,7 @@ runs:
           RESTART="${RESTART_INTERVAL:-${RESTART}}"
           TIMEOUT="${RUN_TIMEOUT:-${TIMEOUT}}"
         fi
+        RESOLUTION="${INPUT_RESOLUTION}"
         
         # Apply explicit overrides from action inputs
         if [ -n "${{ inputs.run-duration }}" ]; then
