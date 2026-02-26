@@ -24,8 +24,8 @@ Workflows must stay modular. Reusable logic belongs in composite actions under `
 
 - **build-mpas** — Compiles MPAS-A for a given compiler family. Build logic is inlined in the action, not in external shell scripts.
 - **download-testdata** — Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Reads `RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
-- **run-mpas** — Configures and runs MPAS-A (calls `download-testdata` internally).
-- **run-perturb-mpas** — Runs one or more perturbed MPAS-A ensemble members for ECT. Contains `perturb_theta.py` (IC perturbation) and `trim_history.py` (history file trimming). Resolution-specific exclusion lists remain in `.github/test-cases/<res>/ect_excluded_vars.txt`. Supports both single-member runs (`member-start == member-end`) and batched runs. Used by `ect-test.yml` and `ect-ensemble-gen.yml`.
+- **run-mpas** — Configures and runs MPAS-A (calls `download-testdata` internally). Supports `strict-exit-check: 'false'` to tolerate non-zero exit codes (e.g., gfortran IEEE warnings). **Important**: sourcing `config.env` overwrites the `RESOLUTION` shell variable — the action saves and restores the input value so `WORKDIR` uses the test-case name (e.g., `run-ect-120km`), not the archive name (`run-120km`).
+- **run-perturb-mpas** — Runs one or more perturbed MPAS-A ensemble members for ECT. Contains `perturb_theta.py` (IC perturbation) and `trim_history.py` (history file trimming). Resolution-specific exclusion lists remain in `.github/test-cases/<res>/ect_excluded_vars.txt`. Supports both single-member runs (`member-start == member-end`) and batched runs. Used by `ect-test.yml` and `ect-ensemble-gen.yml`. When a `restart-file` is provided, the action extracts the `xtime` variable to rename the file to MPAS's expected `restart.YYYY-MM-DD_HH.MM.SS.nc` format, creates the required `restart_timestamp` file, and sets `config_do_restart = .true.` / `config_start_time = 'file'`. The `output` stream interval is set to `RUN_DURATION` and `restart` stream output is disabled for perturbed members.
 - **validate-logs** — Compares run logs against reference output.
 
 When adding new functionality, check whether it should be a new composite action or belongs in an existing one. Do not put reusable shell logic in standalone `.sh` scripts under `.github/workflows/` — that pattern caused breakage when scripts were cleaned up but actions still referenced them. Keep all build, download, and run logic self-contained within actions.
@@ -76,7 +76,7 @@ GitHub Actions runs bash with `set -e -o pipefail`. This causes subtle failures:
   HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
   ```
 
-- **OpenMPI in containers**: Always pass `--allow-run-as-root --oversubscribe` when running OpenMPI inside Docker containers on GitHub Actions runners.
+- **OpenMPI in containers**: Always pass `--allow-run-as-root --oversubscribe` when running OpenMPI inside Docker containers on GitHub Actions runners. The `run-mpas` action requires `mpi-impl: 'openmpi'` to set these flags — it does **not** auto-detect. The `run-perturb-mpas` action defaults to `mpi-impl: 'openmpi'`.
 
 ## Ensemble Consistency Test (ECT)
 
@@ -87,7 +87,7 @@ Two workflows:
 - `ect-test.yml` — Runs 3 members against an existing summary file (fast, used for validation)
 
 Key constraints:
-- **24-hour spin-up**: Hydrometeor fields are zero in cold-start `init.nc`. The ensemble generation workflow runs a 24h unperturbed simulation first, then uses the restart file as the starting point for all perturbed members. The restart file is uploaded to `NCAR/mpas-ci-data` so `ect-test.yml` can download it. See Price-Broncucia et al. (2025), Section 3.2.
+- **24-hour spin-up**: Hydrometeor fields are zero in cold-start `init.nc`. The ensemble generation workflow runs a 24h unperturbed simulation (4 MPI ranks, `strict-exit-check: 'false'`) first, then uses the restart file as the starting point for all perturbed members. The restart file is uploaded to `NCAR/mpas-ci-data` so `ect-test.yml` can download it. **MPAS restart requirements**: restart mode needs (1) a file named `restart.YYYY-MM-DD_HH.MM.SS.nc` matching the filename template in `streams.atmosphere`, and (2) a `restart_timestamp` text file containing that timestamp. The `run-perturb-mpas` action handles both automatically. See Price-Broncucia et al. (2025), Section 3.2.
 - **PyCECT requires ensemble size >= number of output variables** (~47 after trimming for the 120km case; minimum 48). The default of 200 members is recommended. The tool exits 0 even on failure — always verify the output file exists.
 - History files are trimmed before upload: `run-perturb-mpas/trim_history.py` extracts a single time slice and removes variables listed in `ect_excluded_vars.txt` (PV diagnostics, integers, edge velocity). This keeps artifact sizes manageable for 200-member ensembles.
 - **PyCECT `--jsonfile` path pitfall**: `pyEnsSumMPAS.py` writes auto-detected exclusions to `NEW.<jsonfile>`. If `--jsonfile` includes a directory (e.g., `pycect/exclude.json`), it tries to create `NEW.pycect/exclude.json` — a nonexistent directory — and crashes. Always pass a filename in the working directory, not a subdirectory path.
@@ -107,3 +107,6 @@ GitHub only shows the workflow_dispatch trigger button for workflows defined on 
 3. **Artifact patterns**: Use `continue-on-error: true` on artifact download steps and gate subsequent steps with `if: steps.<id>.outcome == 'success'` to handle missing artifacts gracefully.
 4. **YAML heredocs**: EOF terminators at column 1 inside run blocks can confuse the YAML parser. Use string concatenation for multi-line commit messages instead.
 5. **Registry.xml version extraction**: The file contains both `<?xml version="1.0"?>` and `<registry ... version="8.3.1">`. Use `grep -oP '<registry.*version="\K[^"]+'` to target only the registry version.
+6. **config.env variable clobbering**: Sourcing `config.env` sets shell variables like `RESOLUTION=120km`. If a calling script already has a `RESOLUTION` variable (e.g., `ect-120km`), it gets overwritten. Always save variables you need before sourcing, or restore them after.
+7. **MPAS restart_timestamp**: When `config_do_restart = .true.`, MPAS reads a `restart_timestamp` text file to determine which restart file to open (matching the `filename_template` in the restart stream). Without this file the model immediately crashes with a Fortran runtime error. The file contains a single line like `2010-10-24_00:00:00`.
+8. **Default MPI ranks**: ECT ensemble generation uses 4 MPI ranks (requires `graph.info.part.4` in the test case archive). The 120km archive includes partition files for 4, 36, and 128 ranks.
