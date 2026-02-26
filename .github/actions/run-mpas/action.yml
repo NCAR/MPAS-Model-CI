@@ -38,6 +38,10 @@ inputs:
     description: 'Working directory name for the run'
     required: false
     default: ''
+  strict-exit-check:
+    description: 'Fail on non-zero exit code (default true). Set false when gfortran IEEE warnings produce non-zero exit but model output is valid.'
+    required: false
+    default: 'true'
 
 outputs:
   log-dir:
@@ -184,6 +188,9 @@ runs:
         echo "run-exit-code=${RUN_STATUS}" >> $GITHUB_OUTPUT
         if [ $RUN_STATUS -eq 0 ]; then
           echo "status=success" >> $GITHUB_OUTPUT
+        elif [ "${{ inputs.strict-exit-check }}" = "false" ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "::warning::Model exited with status ${RUN_STATUS} (non-strict mode, treating as success)"
         else
           echo "status=failed" >> $GITHUB_OUTPUT
           echo "::warning::Model run exited with status $RUN_STATUS"

@@ -88,10 +88,62 @@ jobs:
           retention-days: 1
 
   #===========================================================================
+  # SPIN-UP: 24-hour unperturbed run to generate spun-up restart file
+  # Hydrometeor fields (rain, snow, cloud water) are zero in cold-start
+  # init.nc and need time to develop realistic values.
+  # See Price-Broncucia et al. (2025), Section 3.2.
+  #===========================================================================
+  spinup:
+    needs: build
+    name: 24h Spin-up
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download executable
+        uses: actions/download-artifact@v4
+        with:
+          name: exe-ect-ensemble
+
+      - name: Make executable
+        run: chmod +x atmosphere_model
+
+      - name: Run 24h spin-up
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          resolution: ect-120km
+          run-duration: '1_00:00:00'
+          restart-interval: '1_00:00:00'
+          run-timeout: '350'
+          strict-exit-check: 'false'
+
+      - name: Verify and upload restart file
+        run: |
+          RESTART=$(ls run-ect-120km/restart.*.nc 2>/dev/null | head -1)
+          if [ -z "${RESTART}" ]; then
+            echo "::error::Spin-up did not produce a restart file"
+            ls -la run-ect-120km/*.nc 2>/dev/null || true
+            exit 1
+          fi
+          echo "Spin-up restart: ${RESTART} ($(du -h ${RESTART} | cut -f1))"
+          cp "${RESTART}" spinup-restart.nc
+
+      - name: Upload restart file
+        uses: actions/upload-artifact@v4
+        with:
+          name: spinup-restart
+          path: spinup-restart.nc
+          retention-days: 1
+
+  #===========================================================================
   # RUN: Batched ensemble members
   #===========================================================================
   run-ensemble:
-    needs: [prepare, build]
+    needs: [prepare, build, spinup]
     strategy:
       fail-fast: false
       matrix:
@@ -119,6 +171,11 @@ jobs:
           test-case: ect-120km
           dest-dir: base-case
 
+      - name: Download spin-up restart
+        uses: actions/download-artifact@v4
+        with:
+          name: spinup-restart
+
       - name: Run ensemble members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
         uses: ./.github/actions/run-perturb-mpas
         with:
@@ -127,6 +184,7 @@ jobs:
           member-start: ${{ matrix.batch.start }}
           member-end: ${{ matrix.batch.end }}
           num-ranks: ${{ inputs.num-ranks || 1 }}
+          restart-file: spinup-restart.nc
 
       - name: Upload history files
         uses: actions/upload-artifact@v4
@@ -194,6 +252,11 @@ jobs:
           pattern: ect-ensemble-*
           path: ensemble-files
           merge-multiple: true
+
+      - name: Download spin-up restart
+        uses: actions/download-artifact@v4
+        with:
+          name: spinup-restart
 
       - name: List ensemble files
         run: |
@@ -283,6 +346,10 @@ jobs:
           # Update current summary (this is what ect-test.yml downloads)
           cp "${SUMMARY_NAME}" "ci-data/${CURRENT_FILE}"
 
+          # Upload spin-up restart file (used by ect-test.yml)
+          RESTART_FILE="${SUMMARY_PREFIX}_restart.nc"
+          cp spinup-restart.nc "ci-data/${RESTART_FILE}"
+
           # Write metadata for current summary
           python3 -c "
           import json
@@ -296,6 +363,7 @@ jobs:
               'ensemble_size': int('${ESIZE}'),
               'generated': '${DATE}',
               'pycect_tslice': int('${TSLICE}'),
+              'restart_file': '${RESTART_FILE}',
               'workflow_run': '${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}'
           }, open('ci-data/ect_summary_metadata.json', 'w'), indent=2)
           print('Wrote ect_summary_metadata.json')
@@ -304,7 +372,7 @@ jobs:
           cd ci-data
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${CURRENT_FILE}" "ect-summaries/${SUMMARY_NAME}" ect_summary_metadata.json
+          git add "${CURRENT_FILE}" "${RESTART_FILE}" "ect-summaries/${SUMMARY_NAME}" ect_summary_metadata.json
           MSG="Update ECT summary: MPAS v${VERSION} (${RESOLUTION})"
           MSG="${MSG}
 
@@ -356,5 +424,6 @@ jobs:
         with:
           name: |
             exe-ect-ensemble
+            spinup-restart
             ect-ensemble-*
           failOnError: false

@@ -38,6 +38,10 @@ inputs:
     description: 'Trim history files after run (true/false)'
     required: false
     default: 'true'
+  restart-file:
+    description: 'Path to a spun-up restart file. When set, each member starts from this restart (with config_do_restart=.true.) instead of init.nc.'
+    required: false
+    default: ''
 
 outputs:
   status:
@@ -73,6 +77,7 @@ runs:
         OUTDIR="${{ inputs.output-dir }}"
         TRIM="${{ inputs.trim }}"
         RESOLUTION="${{ inputs.resolution }}"
+        RESTART_FILE="${{ inputs.restart-file }}"
 
         MPI_FLAGS=""
         if [ "${MPI_IMPL}" = "openmpi" ]; then
@@ -99,22 +104,36 @@ runs:
           chmod +x "${EXE}"
           ln -sf $(realpath "${EXE}") "${RUNDIR}/atmosphere_model"
 
-          # Perturb initial conditions
-          echo "[$(date +%H:%M:%S)] Perturbing initial conditions (seed=${MEMBER})..."
-          IC_FILE="${RUNDIR}/init.nc"
-          if [ ! -f "${IC_FILE}" ]; then
-            IC_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
+          # Determine file to perturb
+          if [ -n "${RESTART_FILE}" ]; then
+            cp "${RESTART_FILE}" "${RUNDIR}/"
+            PERTURB_FILE="${RUNDIR}/$(basename ${RESTART_FILE})"
+            echo "[$(date +%H:%M:%S)] Restart mode: perturbing ${PERTURB_FILE}"
+          else
+            PERTURB_FILE="${RUNDIR}/init.nc"
+            if [ ! -f "${PERTURB_FILE}" ]; then
+              PERTURB_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
+            fi
           fi
-          if [ -z "${IC_FILE}" ] || [ ! -f "${IC_FILE}" ]; then
-            echo "::error::Member ${MEMBER_ID}: could not find initial conditions file"
+
+          if [ -z "${PERTURB_FILE}" ] || [ ! -f "${PERTURB_FILE}" ]; then
+            echo "::error::Member ${MEMBER_ID}: could not find file to perturb"
             rm -rf "${RUNDIR}"
             continue
           fi
+
+          echo "[$(date +%H:%M:%S)] Perturbing theta (seed=${MEMBER})..."
           python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/perturb_theta.py \
-            "${IC_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
+            "${PERTURB_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
 
           # Configure namelist and streams
           cd "${RUNDIR}"
+
+          if [ -n "${RESTART_FILE}" ]; then
+            sed -i "s/config_do_restart.*/config_do_restart = .true./" namelist.atmosphere
+            sed -i "s/config_start_time.*/config_start_time = 'file'/" namelist.atmosphere
+          fi
+
           sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
           sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
           sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere

@@ -71,6 +71,25 @@ jobs:
           test-case: ect-120km
           dest-dir: base-case
 
+      - name: Download spin-up restart
+        id: restart
+        shell: bash
+        run: |
+          source .github/test-cases/ect-120km/config.env
+          RESTART="${ECT_SUMMARY_PREFIX}_restart.nc"
+          echo "Downloading ${RESTART} from ${DATA_REPO}..."
+          HTTP_CODE=$(curl -sL -w "%{http_code}" \
+            "https://github.com/${DATA_REPO}/raw/main/${RESTART}" \
+            -o "${RESTART}")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Downloaded restart: $(du -h ${RESTART})"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Spin-up restart not available (HTTP ${HTTP_CODE}), running from cold-start init.nc"
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run perturbed MPAS-A
         uses: ./.github/actions/run-perturb-mpas
         with:
@@ -78,6 +97,7 @@ jobs:
           executable: ./atmosphere_model
           member-start: ${{ matrix.member }}
           member-end: ${{ matrix.member }}
+          restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history file
         uses: actions/upload-artifact@v4
