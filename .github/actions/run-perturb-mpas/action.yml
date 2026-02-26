@@ -114,11 +114,11 @@ runs:
         print(ds.variables['xtime'][0].tobytes().decode().strip())
         ds.close()
         " "${RESTART_FILE}")
-            MPAS_RESTART="restart.${RESTART_TIME}.nc"
-            cp "${RESTART_FILE}" "${RUNDIR}/${MPAS_RESTART}"
+            RESTART_FNAME="restart.$(echo ${RESTART_TIME} | tr ':' '.').nc"
+            cp "${RESTART_FILE}" "${RUNDIR}/${RESTART_FNAME}"
             echo "${RESTART_TIME}" > "${RUNDIR}/restart_timestamp"
-            PERTURB_FILE="${RUNDIR}/${MPAS_RESTART}"
-            echo "[$(date +%H:%M:%S)] Restart mode: ${MPAS_RESTART} (time=${RESTART_TIME})"
+            PERTURB_FILE="${RUNDIR}/${RESTART_FNAME}"
+            echo "[$(date +%H:%M:%S)] Restart mode: ${RESTART_FNAME} (time=${RESTART_TIME})"
           else
             PERTURB_FILE="${RUNDIR}/init.nc"
             if [ ! -f "${PERTURB_FILE}" ]; then
