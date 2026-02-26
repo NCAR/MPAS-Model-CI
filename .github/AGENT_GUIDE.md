@@ -12,7 +12,7 @@ The CI exists to support code health for a community model. Scientists and stude
 
 ## Repository Layout
 
-- `.github/actions/` — Reusable composite actions (build-mpas, run-mpas, run-perturb-mpas, download-testdata, validate-logs, perturb-ic)
+- `.github/actions/` — Reusable composite actions (build-mpas, run-mpas, run-perturb-mpas, download-testdata, validate-logs)
 - `.github/workflows/` — GitHub Actions workflow definitions
 - `.github/workflows/validation/` — Python scripts for log comparison
 - `.github/test-cases/` — Test case configurations (`240km/`, `ect-120km/`), each with a `config.env`
@@ -25,9 +25,8 @@ Workflows must stay modular. Reusable logic belongs in composite actions under `
 - **build-mpas** — Compiles MPAS-A for a given compiler family. Build logic is inlined in the action, not in external shell scripts.
 - **download-testdata** — Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Reads `RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
 - **run-mpas** — Configures and runs MPAS-A (calls `download-testdata` internally).
-- **run-perturb-mpas** — Runs one or more perturbed MPAS-A ensemble members for ECT. Handles IC perturbation (via `perturb-ic/perturb_theta.py`), namelist/stream configuration, model execution, and optional history file trimming (via its own `trim_history.py`). Resolution-specific exclusion lists remain in `.github/test-cases/<res>/ect_excluded_vars.txt`. Supports both single-member runs (`member-start == member-end`) and batched runs. Used by `ect-test.yml` and `ect-ensemble-gen.yml`.
+- **run-perturb-mpas** — Runs one or more perturbed MPAS-A ensemble members for ECT. Contains `perturb_theta.py` (IC perturbation) and `trim_history.py` (history file trimming). Resolution-specific exclusion lists remain in `.github/test-cases/<res>/ect_excluded_vars.txt`. Supports both single-member runs (`member-start == member-end`) and batched runs. Used by `ect-test.yml` and `ect-ensemble-gen.yml`.
 - **validate-logs** — Compares run logs against reference output.
-- **perturb-ic** — Applies small perturbations to initial conditions for ECT.
 
 When adding new functionality, check whether it should be a new composite action or belongs in an existing one. Do not put reusable shell logic in standalone `.sh` scripts under `.github/workflows/` — that pattern caused breakage when scripts were cleaned up but actions still referenced them. Keep all build, download, and run logic self-contained within actions.
 

@@ -110,7 +110,7 @@ runs:
             rm -rf "${RUNDIR}"
             continue
           fi
-          python3 ${GITHUB_WORKSPACE}/.github/actions/perturb-ic/perturb_theta.py \
+          python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/perturb_theta.py \
             "${IC_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
 
           # Configure namelist and streams
