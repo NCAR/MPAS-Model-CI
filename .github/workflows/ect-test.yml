@@ -69,86 +69,22 @@ jobs:
         uses: ./.github/actions/download-testdata
         with:
           test-case: ect-120km
-          dest-dir: run-ect-${{ matrix.member }}
+          dest-dir: base-case
 
-      - name: Setup run directory
-        shell: bash
-        run: |
-          cd run-ect-${{ matrix.member }}
-          chmod +x ../atmosphere_model
-          ln -sf $(realpath ../atmosphere_model) ./atmosphere_model
-
-      - name: Install Python dependencies
-        shell: bash
-        run: |
-          python3 -m ensurepip --upgrade 2>/dev/null || true
-          python3 -m pip install netCDF4 numpy
-
-      - name: Perturb initial conditions
-        shell: bash
-        run: |
-          source .github/test-cases/ect-120km/config.env
-          IC_FILE="run-ect-${{ matrix.member }}/init.nc"
-          if [ ! -f "${IC_FILE}" ]; then
-            IC_FILE=$(ls run-ect-${{ matrix.member }}/*.init*.nc 2>/dev/null | head -1)
-          fi
-          if [ -z "${IC_FILE}" ] || [ ! -f "${IC_FILE}" ]; then
-            echo "ERROR: Could not find initial conditions file"
-            ls -la run-ect-${{ matrix.member }}/*.nc 2>/dev/null || true
-            exit 1
-          fi
-          echo "Perturbing: ${IC_FILE}"
-          python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${{ matrix.member }} --magnitude ${ECT_PERTURB_MAGNITUDE}
-
-      - name: Configure namelist
-        shell: bash
-        working-directory: run-ect-${{ matrix.member }}
-        run: |
-          source $GITHUB_WORKSPACE/.github/test-cases/ect-120km/config.env
-          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
-          sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
-          sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
-          echo "Run duration: ${RUN_DURATION}"
-          echo "History interval: ${ECT_HISTORY_INTERVAL}"
-
-      - name: Run MPAS-A
-        shell: bash
-        working-directory: run-ect-${{ matrix.member }}
-        run: |
-          source /container/config_env.sh
-          ulimit -s unlimited 2>/dev/null || true
-          set +e
-          timeout 30m mpirun --allow-run-as-root --oversubscribe -n 1 ./atmosphere_model
-          RUN_STATUS=$?
-          set -e
-          if [ $RUN_STATUS -ne 0 ]; then
-            echo "::warning::Model exited with status ${RUN_STATUS}"
-          fi
-          if ! ls history.*.nc &>/dev/null; then
-            echo "::error::No history file produced"
-            exit 1
-          fi
-
-      - name: Trim history file
-        shell: bash
-        run: |
-          source .github/test-cases/ect-120km/config.env
-          HIST_FILE=$(ls -t run-ect-${{ matrix.member }}/history.*.nc 2>/dev/null | head -1 || true)
-          if [ -n "${HIST_FILE}" ]; then
-            # Output with member ID in filename — all members produce the
-            # same timestamp-based name, and merge-multiple would overwrite
-            python3 .github/test-cases/ect-120km/trim_history.py \
-              "${HIST_FILE}" "run-ect-${{ matrix.member }}/history.member${{ matrix.member }}.nc" \
-              --tslice ${ECT_RAW_TSLICE} \
-              --exclude-file .github/test-cases/ect-120km/ect_excluded_vars.txt
-          fi
+      - name: Run perturbed MPAS-A
+        uses: ./.github/actions/run-perturb-mpas
+        with:
+          base-dir: base-case
+          executable: ./atmosphere_model
+          member-start: ${{ matrix.member }}
+          member-end: ${{ matrix.member }}
 
       - name: Upload history file
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ect-history-${{ matrix.member }}
-          path: run-ect-${{ matrix.member }}/history.member*.nc
+          path: history-output/history.*.nc
           retention-days: 1
 
       - name: Upload log files
@@ -156,7 +92,7 @@ jobs:
         if: always()
         with:
           name: ect-logs-${{ matrix.member }}
-          path: run-ect-${{ matrix.member }}/log.*
+          path: history-output/log.*.out
           retention-days: 5
 
   #===========================================================================

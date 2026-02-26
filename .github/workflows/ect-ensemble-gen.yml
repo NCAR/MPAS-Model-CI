@@ -119,81 +119,20 @@ jobs:
           test-case: ect-120km
           dest-dir: base-case
 
-      - name: Install Python dependencies
-        shell: bash
-        run: |
-          python3 -m ensurepip --upgrade 2>/dev/null || true
-          python3 -m pip install netCDF4 numpy
-
       - name: Run ensemble members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
-        shell: bash
-        run: |
-          source /container/config_env.sh
-          source .github/test-cases/ect-120km/config.env
-          ulimit -s unlimited 2>/dev/null || true
-
-          mkdir -p history-output
-
-          for MEMBER in $(seq ${{ matrix.batch.start }} ${{ matrix.batch.end }}); do
-            MEMBER_ID=$(printf "%04d" ${MEMBER})
-            RUNDIR="run-ect-${MEMBER_ID}"
-            echo ""
-            echo "=========================================="
-            echo "  Ensemble member ${MEMBER_ID}"
-            echo "=========================================="
-
-            cp -r base-case "${RUNDIR}"
-            ln -sf $(realpath atmosphere_model) "${RUNDIR}/atmosphere_model"
-
-            # Perturb initial conditions
-            echo "[$(date +%H:%M:%S)] Perturbing initial conditions (seed=${MEMBER})..."
-            IC_FILE="${RUNDIR}/init.nc"
-            if [ ! -f "${IC_FILE}" ]; then
-              IC_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
-            fi
-            python3 .github/actions/perturb-ic/perturb_theta.py "${IC_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
-
-            # Configure namelist and streams
-            cd "${RUNDIR}"
-            sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
-            sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
-            sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
-
-            # Run model (set +e: gfortran may exit non-zero on IEEE warnings)
-            NRANKS=${{ inputs.num-ranks || 1 }}
-            echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, ${NRANKS} ranks)..."
-            set +e
-            timeout ${RUN_TIMEOUT}m mpirun --allow-run-as-root --oversubscribe -n ${NRANKS} ./atmosphere_model
-            RUN_STATUS=$?
-            set -e
-            echo "[$(date +%H:%M:%S)] Model finished (exit code ${RUN_STATUS})"
-
-            # Check for history file as the real success indicator
-            HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
-            if [ -n "${HIST_FILE}" ]; then
-              # Trim: extract target time slice, remove excluded vars, compress
-              python3 $GITHUB_WORKSPACE/.github/test-cases/ect-120km/trim_history.py \
-                "${HIST_FILE}" "../history-output/history.${MEMBER_ID}.nc" \
-                --tslice ${ECT_RAW_TSLICE} \
-                --exclude-file $GITHUB_WORKSPACE/.github/test-cases/ect-120km/ect_excluded_vars.txt
-              echo "[$(date +%H:%M:%S)] Saved trimmed history for member ${MEMBER_ID}"
-            else
-              echo "::warning::Member ${MEMBER_ID} failed (exit ${RUN_STATUS}, no history file)"
-            fi
-
-            cd ..
-            rm -rf "${RUNDIR}"
-          done
-
-          echo ""
-          echo "=== Completed batch ==="
-          ls -la history-output/
+        uses: ./.github/actions/run-perturb-mpas
+        with:
+          base-dir: base-case
+          executable: ./atmosphere_model
+          member-start: ${{ matrix.batch.start }}
+          member-end: ${{ matrix.batch.end }}
+          num-ranks: ${{ inputs.num-ranks || 1 }}
 
       - name: Upload history files
         uses: actions/upload-artifact@v4
         with:
           name: ect-ensemble-${{ matrix.batch.start }}-${{ matrix.batch.end }}
-          path: history-output/
+          path: history-output/history.*.nc
           retention-days: 1
 
   #===========================================================================

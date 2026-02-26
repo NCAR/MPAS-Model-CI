@@ -9,6 +9,9 @@ PyCECT requires three area-weighting variables (areaCell, dvEdge,
 areaTriangle) to compute global means. These static variables are
 preserved even though they lack a Time dimension.
 
+Resolution-specific exclusion lists live in .github/test-cases/<res>/ect_excluded_vars.txt
+and are passed via --exclude-file.
+
 Usage:
     python3 trim_history.py input.nc output.nc --tslice 0 --exclude-file excluded_vars.txt
 """

@@ -1,0 +1,170 @@
+name: 'Run Perturbed MPAS'
+description: >
+  Run one or more perturbed MPAS-A ensemble members for ECT.
+  Handles IC perturbation, namelist/stream configuration, model execution,
+  and optional history file trimming. Supports both single-member
+  (ect-test) and batched (ect-ensemble-gen) use cases.
+
+inputs:
+  base-dir:
+    description: 'Path to the base test case directory (copied per member)'
+    required: true
+  executable:
+    description: 'Path to atmosphere_model executable'
+    required: true
+  member-start:
+    description: 'First ensemble member index'
+    required: true
+  member-end:
+    description: 'Last ensemble member index (same as member-start for single member)'
+    required: true
+  resolution:
+    description: 'Test case name for loading config.env (matches .github/test-cases/<name>/)'
+    required: false
+    default: 'ect-120km'
+  num-ranks:
+    description: 'Number of MPI ranks per member'
+    required: false
+    default: '1'
+  mpi-impl:
+    description: 'MPI implementation (openmpi, mpich)'
+    required: false
+    default: 'openmpi'
+  output-dir:
+    description: 'Directory to collect trimmed history files'
+    required: false
+    default: 'history-output'
+  trim:
+    description: 'Trim history files after run (true/false)'
+    required: false
+    default: 'true'
+
+outputs:
+  status:
+    description: 'Overall status (success/partial/failed)'
+    value: ${{ steps.run-members.outputs.status }}
+  members-completed:
+    description: 'Number of members that produced history files'
+    value: ${{ steps.run-members.outputs.members-completed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: |
+        python3 -m ensurepip --upgrade 2>/dev/null || true
+        python3 -m pip install netCDF4 numpy
+
+    - name: Run perturbed members
+      id: run-members
+      shell: bash
+      run: |
+        source /container/config_env.sh
+        source ${GITHUB_WORKSPACE}/.github/test-cases/${{ inputs.resolution }}/config.env
+        ulimit -s unlimited 2>/dev/null || true
+
+        BASEDIR="${{ inputs.base-dir }}"
+        EXE="${{ inputs.executable }}"
+        MEMBER_START=${{ inputs.member-start }}
+        MEMBER_END=${{ inputs.member-end }}
+        NRANKS=${{ inputs.num-ranks }}
+        MPI_IMPL="${{ inputs.mpi-impl }}"
+        OUTDIR="${{ inputs.output-dir }}"
+        TRIM="${{ inputs.trim }}"
+        RESOLUTION="${{ inputs.resolution }}"
+
+        MPI_FLAGS=""
+        if [ "${MPI_IMPL}" = "openmpi" ]; then
+          MPI_FLAGS="--allow-run-as-root --oversubscribe"
+        elif [ "${MPI_IMPL}" = "mpich" ]; then
+          export MPICH_GPU_SUPPORT_ENABLED=0
+        fi
+
+        mkdir -p "${OUTDIR}"
+
+        TOTAL=0
+        COMPLETED=0
+
+        for MEMBER in $(seq ${MEMBER_START} ${MEMBER_END}); do
+          TOTAL=$((TOTAL + 1))
+          MEMBER_ID=$(printf "%04d" ${MEMBER})
+          RUNDIR="run-ect-${MEMBER_ID}"
+          echo ""
+          echo "=========================================="
+          echo "  Ensemble member ${MEMBER_ID}"
+          echo "=========================================="
+
+          cp -r "${BASEDIR}" "${RUNDIR}"
+          chmod +x "${EXE}"
+          ln -sf $(realpath "${EXE}") "${RUNDIR}/atmosphere_model"
+
+          # Perturb initial conditions
+          echo "[$(date +%H:%M:%S)] Perturbing initial conditions (seed=${MEMBER})..."
+          IC_FILE="${RUNDIR}/init.nc"
+          if [ ! -f "${IC_FILE}" ]; then
+            IC_FILE=$(ls ${RUNDIR}/*.init*.nc 2>/dev/null | head -1)
+          fi
+          if [ -z "${IC_FILE}" ] || [ ! -f "${IC_FILE}" ]; then
+            echo "::error::Member ${MEMBER_ID}: could not find initial conditions file"
+            rm -rf "${RUNDIR}"
+            continue
+          fi
+          python3 ${GITHUB_WORKSPACE}/.github/actions/perturb-ic/perturb_theta.py \
+            "${IC_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
+
+          # Configure namelist and streams
+          cd "${RUNDIR}"
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
+          sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART_INTERVAL}"'"/' streams.atmosphere
+          sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${ECT_HISTORY_INTERVAL}"'"/' streams.atmosphere
+
+          # Run model (set +e: gfortran may exit non-zero on IEEE warnings)
+          echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, ${NRANKS} ranks)..."
+          set +e
+          timeout ${RUN_TIMEOUT}m mpirun -n ${NRANKS} ${MPI_FLAGS} ./atmosphere_model
+          RUN_STATUS=$?
+          set -e
+          echo "[$(date +%H:%M:%S)] Model finished (exit code ${RUN_STATUS})"
+
+          # Preserve log files before cleanup
+          for LOGFILE in log.atmosphere.*.out; do
+            [ -f "${LOGFILE}" ] && cp "${LOGFILE}" "../${OUTDIR}/${LOGFILE%.out}.member${MEMBER_ID}.out"
+          done
+
+          # Check for history file as the real success indicator
+          HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
+          if [ -n "${HIST_FILE}" ]; then
+            if [ "${TRIM}" = "true" ]; then
+              python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/trim_history.py \
+                "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc" \
+                --tslice ${ECT_RAW_TSLICE} \
+                --exclude-file ${GITHUB_WORKSPACE}/.github/test-cases/${RESOLUTION}/ect_excluded_vars.txt
+              echo "[$(date +%H:%M:%S)] Saved trimmed history for member ${MEMBER_ID}"
+            else
+              cp "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc"
+              echo "[$(date +%H:%M:%S)] Saved history for member ${MEMBER_ID}"
+            fi
+            COMPLETED=$((COMPLETED + 1))
+          else
+            echo "::warning::Member ${MEMBER_ID} failed (exit ${RUN_STATUS}, no history file)"
+          fi
+
+          cd ..
+          rm -rf "${RUNDIR}"
+        done
+
+        echo ""
+        echo "=== Completed ${COMPLETED}/${TOTAL} members ==="
+        ls -la "${OUTDIR}/"
+
+        echo "members-completed=${COMPLETED}" >> $GITHUB_OUTPUT
+        if [ ${COMPLETED} -eq ${TOTAL} ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        elif [ ${COMPLETED} -gt 0 ]; then
+          echo "status=partial" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+          echo "::error::No ensemble members produced history files"
+          exit 1
+        fi

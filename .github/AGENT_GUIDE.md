@@ -12,7 +12,7 @@ The CI exists to support code health for a community model. Scientists and stude
 
 ## Repository Layout
 
-- `.github/actions/` — Reusable composite actions (build-mpas, run-mpas, download-testdata, validate-logs, perturb-ic)
+- `.github/actions/` — Reusable composite actions (build-mpas, run-mpas, run-perturb-mpas, download-testdata, validate-logs, perturb-ic)
 - `.github/workflows/` — GitHub Actions workflow definitions
 - `.github/workflows/validation/` — Python scripts for log comparison
 - `.github/test-cases/` — Test case configurations (`240km/`, `ect-120km/`), each with a `config.env`
@@ -25,6 +25,7 @@ Workflows must stay modular. Reusable logic belongs in composite actions under `
 - **build-mpas** — Compiles MPAS-A for a given compiler family. Build logic is inlined in the action, not in external shell scripts.
 - **download-testdata** — Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Reads `RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
 - **run-mpas** — Configures and runs MPAS-A (calls `download-testdata` internally).
+- **run-perturb-mpas** — Runs one or more perturbed MPAS-A ensemble members for ECT. Handles IC perturbation (via `perturb-ic/perturb_theta.py`), namelist/stream configuration, model execution, and optional history file trimming (via its own `trim_history.py`). Resolution-specific exclusion lists remain in `.github/test-cases/<res>/ect_excluded_vars.txt`. Supports both single-member runs (`member-start == member-end`) and batched runs. Used by `ect-test.yml` and `ect-ensemble-gen.yml`.
 - **validate-logs** — Compares run logs against reference output.
 - **perturb-ic** — Applies small perturbations to initial conditions for ECT.
 
@@ -88,7 +89,7 @@ Two workflows:
 
 Key constraints:
 - **PyCECT requires ensemble size >= number of output variables** (~47 after trimming for the 120km case; minimum 48). The default of 200 members is recommended. The tool exits 0 even on failure — always verify the output file exists.
-- History files are trimmed before upload: `trim_history.py` extracts a single time slice and removes variables listed in `ect_excluded_vars.txt` (PV diagnostics, integers, edge velocity). This keeps artifact sizes manageable for 200-member ensembles.
+- History files are trimmed before upload: `run-perturb-mpas/trim_history.py` extracts a single time slice and removes variables listed in `ect_excluded_vars.txt` (PV diagnostics, integers, edge velocity). This keeps artifact sizes manageable for 200-member ensembles.
 - **PyCECT `--jsonfile` path pitfall**: `pyEnsSumMPAS.py` writes auto-detected exclusions to `NEW.<jsonfile>`. If `--jsonfile` includes a directory (e.g., `pycect/exclude.json`), it tries to create `NEW.pycect/exclude.json` — a nonexistent directory — and crashes. Always pass a filename in the working directory, not a subdirectory path.
 - **ECT perturbation magnitude**: 1e-8 is too small (produces identical outputs, PyCECT gets zero variance). 1e-1 is too large (causes NaN divergence). 1e-4 works: enough spread for PyCECT statistics while keeping the model stable.
 - ECT configuration lives in `.github/test-cases/ect-120km/config.env`
