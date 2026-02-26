@@ -106,9 +106,19 @@ runs:
 
           # Determine file to perturb
           if [ -n "${RESTART_FILE}" ]; then
-            cp "${RESTART_FILE}" "${RUNDIR}/"
-            PERTURB_FILE="${RUNDIR}/$(basename ${RESTART_FILE})"
-            echo "[$(date +%H:%M:%S)] Restart mode: perturbing ${PERTURB_FILE}"
+            # Extract timestamp from restart file and rename to MPAS format.
+            # MPAS reads restart_timestamp to find restart.YYYY-MM-DD_HH.MM.SS.nc
+            RESTART_TIME=$(python3 -c "
+        import netCDF4, sys
+        ds = netCDF4.Dataset(sys.argv[1])
+        print(ds.variables['xtime'][0].tobytes().decode().strip())
+        ds.close()
+        " "${RESTART_FILE}")
+            MPAS_RESTART="restart.${RESTART_TIME}.nc"
+            cp "${RESTART_FILE}" "${RUNDIR}/${MPAS_RESTART}"
+            echo "${RESTART_TIME}" > "${RUNDIR}/restart_timestamp"
+            PERTURB_FILE="${RUNDIR}/${MPAS_RESTART}"
+            echo "[$(date +%H:%M:%S)] Restart mode: ${MPAS_RESTART} (time=${RESTART_TIME})"
           else
             PERTURB_FILE="${RUNDIR}/init.nc"
             if [ ! -f "${PERTURB_FILE}" ]; then
