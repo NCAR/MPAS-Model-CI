@@ -162,8 +162,21 @@ runs:
           done
 
           # Check for history file as the real success indicator
+          echo "[$(date +%H:%M:%S)] History files produced:"
+          ls -la history.*.nc 2>/dev/null || echo "  (none)"
           HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
           if [ -n "${HIST_FILE}" ]; then
+            python3 -c "
+        import netCDF4, sys
+        ds = netCDF4.Dataset(sys.argv[1])
+        times = ds.variables.get('xtime')
+        ntime = ds.dimensions['Time'].size
+        print(f'  Selected: {sys.argv[1]} ({ntime} time slice(s))')
+        if times is not None:
+            for i in range(ntime):
+                print(f'    slice {i}: {times[i].tobytes().decode().strip()}')
+        ds.close()
+        " "${HIST_FILE}"
             if [ "${TRIM}" = "true" ]; then
               python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/trim_history.py \
                 "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc" \
