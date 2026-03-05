@@ -160,12 +160,11 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        member: [0, 1, 2]
         mpi: [mpich3, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
-    name: ECT member ${{ matrix.member }} (${{ matrix.mpi }}, ${{ matrix.gpu }}, ${{ matrix.io }})
+    name: ECT (${{ matrix.mpi }}, ${{ matrix.gpu }}, ${{ matrix.io }})
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
@@ -220,17 +219,17 @@ jobs:
         with:
           base-dir: base-case
           executable: ./atmosphere_model
-          member-start: ${{ matrix.member }}
-          member-end: ${{ matrix.member }}
+          member-start: '0'
+          member-end: '2'
           num-ranks: '4'
           mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
-      - name: Upload history file
+      - name: Upload history files
         uses: actions/upload-artifact@v4
         if: always() && steps.download.outcome == 'success'
         with:
-          name: ect-history-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}-member${{ matrix.member }}
+          name: ect-history-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
           path: history-output/history.*.nc
           retention-days: 1
 
@@ -288,9 +287,8 @@ jobs:
         if: steps.summary.outputs.available == 'true'
         uses: actions/download-artifact@v4
         with:
-          pattern: ect-history-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}-*
+          name: ect-history-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
           path: ect-test-files
-          merge-multiple: true
 
       - name: List test files
         if: steps.summary.outputs.available == 'true'

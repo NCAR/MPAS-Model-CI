@@ -166,13 +166,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        member: [0, 1, 2]
         compiler: [gcc, nvhpc, oneapi]
         mpi: [mpich3, openmpi]
         io: [smiol, pio]
         num-procs: [1, 4]
 
-    name: ECT ${{ matrix.num-procs }}proc member ${{ matrix.member }} (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
+    name: ECT ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
       image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
@@ -220,17 +219,17 @@ jobs:
         with:
           base-dir: base-case
           executable: ./atmosphere_model
-          member-start: ${{ matrix.member }}
-          member-end: ${{ matrix.member }}
+          member-start: '0'
+          member-end: '2'
           num-ranks: ${{ matrix.num-procs }}
           mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
-      - name: Upload history file
+      - name: Upload history files
         uses: actions/upload-artifact@v4
         if: always() && steps.download.outcome == 'success'
         with:
-          name: ect-history-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}-${{ matrix.num-procs }}proc-member${{ matrix.member }}
+          name: ect-history-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}-${{ matrix.num-procs }}proc
           path: history-output/history.*.nc
           retention-days: 1
 
@@ -289,9 +288,8 @@ jobs:
         if: steps.summary.outputs.available == 'true'
         uses: actions/download-artifact@v4
         with:
-          pattern: ect-history-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}-${{ matrix.num-procs }}proc-*
+          name: ect-history-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}-${{ matrix.num-procs }}proc
           path: ect-test-files
-          merge-multiple: true
 
       - name: List test files
         if: steps.summary.outputs.available == 'true'
