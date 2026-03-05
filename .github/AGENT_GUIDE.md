@@ -82,9 +82,13 @@ GitHub Actions runs bash with `set -e -o pipefail`. This causes subtle failures:
 
 ECT validates that code changes do not alter model output beyond internal variability. It does not require bit-for-bit reproducibility — scientifically equivalent changes pass. Reference: Price-Broncucia et al. (2025), doi:10.5194/gmd-18-2349-2025.
 
-Two workflows:
+ECT workflows:
 - `ect-ensemble-gen.yml` — Generates N perturbed runs and produces a PyCECT summary file (expensive, manual trigger)
-- `ect-test.yml` — Runs 3 members against an existing summary file (fast, used for validation)
+- `ect-test.yml` — Standalone: runs 3 members against an existing summary file (fast, used for validation)
+- `test-ga-nogpu.yml` — Embedded ECT: runs 3 perturbed members for every compiler/MPI/IO/num-procs combination alongside the existing 240km log-based validation
+- `test-cirrus-nvhpc.yml` — Embedded ECT: runs 3 perturbed members for every MPI/GPU/IO combination alongside existing log validation
+
+The embedded ECT jobs use the gcc-generated ensemble summary for all compiler/MPI/decomposition comparisons. Per the paper's authors, only one compiler is needed for ensemble generation — the summary should still detect meaningful changes across other compilers, MPI libraries, and decompositions.
 
 Key constraints:
 - **24-hour spin-up**: Hydrometeor fields are zero in cold-start `init.nc`. The ensemble generation workflow runs a 24h unperturbed simulation (4 MPI ranks, `strict-exit-check: 'false'`) first, then uses the restart file as the starting point for all perturbed members. The restart file is uploaded to `NCAR/mpas-ci-data` so `ect-test.yml` can download it. **MPAS restart requirements**: restart mode needs (1) a file named `restart.YYYY-MM-DD_HH.MM.SS.nc` matching the filename template in `streams.atmosphere`, and (2) a `restart_timestamp` text file containing that timestamp. The `run-perturb-mpas` action handles both automatically. See Price-Broncucia et al. (2025), Section 3.2.

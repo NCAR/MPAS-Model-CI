@@ -151,10 +151,192 @@ jobs:
           echo "::warning::No log artifacts available — all runs may have been skipped or failed."
 
   #===========================================================================
+  # ECT RUN: 3 perturbed ensemble members per matrix combination (120km)
+  #===========================================================================
+  ect-run:
+    needs: build
+    if: always() && needs.build.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        member: [0, 1, 2]
+        mpi: [mpich3, openmpi]
+        gpu: [nogpu, cuda]
+        io: [smiol, pio]
+
+    name: ECT member ${{ matrix.member }} (${{ matrix.mpi }}, ${{ matrix.gpu }}, ${{ matrix.io }})
+    runs-on:
+      group: CIRRUS-4x8-gpu
+    container:
+      image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check GPU availability
+        if: matrix.gpu == 'cuda'
+        run: |
+          echo "=== GPU Information ==="
+          nvidia-smi || echo "WARNING: nvidia-smi failed"
+
+      - name: Download executable
+        id: download
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: exe-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
+
+      - name: Download test case
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/download-testdata
+        with:
+          test-case: ect-120km
+          dest-dir: base-case
+
+      - name: Download spin-up restart
+        if: steps.download.outcome == 'success'
+        id: restart
+        shell: bash
+        run: |
+          source .github/test-cases/ect-120km/config.env
+          RESTART="${ECT_SUMMARY_PREFIX}_restart.nc"
+          echo "Downloading ${RESTART} from ${DATA_REPO}..."
+          HTTP_CODE=$(curl -sL -w "%{http_code}" \
+            "https://github.com/${DATA_REPO}/raw/main/${RESTART}" \
+            -o "${RESTART}")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Downloaded restart: $(du -h ${RESTART})"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Spin-up restart not available (HTTP ${HTTP_CODE}), running from cold-start init.nc"
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run perturbed MPAS-A
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/run-perturb-mpas
+        with:
+          base-dir: base-case
+          executable: ./atmosphere_model
+          member-start: ${{ matrix.member }}
+          member-end: ${{ matrix.member }}
+          num-ranks: '4'
+          mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
+          restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
+
+      - name: Upload history file
+        uses: actions/upload-artifact@v4
+        if: always() && steps.download.outcome == 'success'
+        with:
+          name: ect-history-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}-member${{ matrix.member }}
+          path: history-output/history.*.nc
+          retention-days: 1
+
+  #===========================================================================
+  # ECT VALIDATE: PyCECT validation per matrix combination
+  #===========================================================================
+  ect-validate:
+    needs: ect-run
+    if: always() && needs.ect-run.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [mpich3, openmpi]
+        gpu: [nogpu, cuda]
+        io: [smiol, pio]
+
+    name: ECT Validate (${{ matrix.mpi }}, ${{ matrix.gpu }}, ${{ matrix.io }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyCECT dependencies
+        run: pip install "numpy<2" scipy netCDF4
+
+      - name: Clone PyCECT
+        run: git clone --depth 1 https://github.com/NCAR/PyCECT.git pycect
+
+      - name: Download ensemble summary file
+        id: summary
+        run: |
+          source .github/test-cases/ect-120km/config.env
+          SUMMARY="${ECT_SUMMARY_PREFIX}.nc"
+          echo "Downloading ${SUMMARY} from ${DATA_REPO}..."
+          HTTP_CODE=$(curl -sL -w "%{http_code}" \
+            "https://github.com/${DATA_REPO}/raw/main/${SUMMARY}" \
+            -o "${SUMMARY}")
+          if [ "${HTTP_CODE}" != "200" ]; then
+            echo "::warning::Ensemble summary file not yet available in ${DATA_REPO} (HTTP ${HTTP_CODE})"
+            echo "available=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "Downloaded summary file: $(du -h ${SUMMARY})"
+          echo "available=true" >> $GITHUB_OUTPUT
+          echo "summary-file=${SUMMARY}" >> $GITHUB_OUTPUT
+          echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
+
+      - name: Download history files
+        if: steps.summary.outputs.available == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ect-history-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}-*
+          path: ect-test-files
+          merge-multiple: true
+
+      - name: List test files
+        if: steps.summary.outputs.available == 'true'
+        run: |
+          echo "=== ECT test history files ==="
+          ls -la ect-test-files/ 2>/dev/null || echo "No history files found"
+
+      - name: Run PyCECT
+        if: steps.summary.outputs.available == 'true'
+        run: |
+          set +e
+          python pycect/pyCECT.py \
+            --sumfile ${{ steps.summary.outputs.summary-file }} \
+            --indir ect-test-files \
+            --tslice ${{ steps.summary.outputs.tslice }} \
+            --mpas \
+            --verbose \
+            2>&1 | tee pycect_output.txt
+          PYCECT_STATUS=$?
+          set -e
+
+          if [ $PYCECT_STATUS -ne 0 ]; then
+            echo "::error::pyCECT crashed with exit code ${PYCECT_STATUS}"
+            exit 1
+          fi
+
+          if grep -qF '****PASSED****' pycect_output.txt; then
+            echo "::notice::ECT (nvhpc/${{ matrix.mpi }}/${{ matrix.gpu }}/${{ matrix.io }}): PASSED"
+          elif grep -qF '****FAILED****' pycect_output.txt; then
+            echo "::error::ECT (nvhpc/${{ matrix.mpi }}/${{ matrix.gpu }}/${{ matrix.io }}): FAILED"
+            exit 1
+          else
+            echo "::warning::Could not determine ECT result from pyCECT output"
+            exit 1
+          fi
+
+      - name: Skip notice
+        if: steps.summary.outputs.available != 'true'
+        run: |
+          echo "::notice::ECT validation skipped — ensemble summary file not yet available."
+
+  #===========================================================================
   # CLEANUP: Remove executable artifacts
   #===========================================================================
   cleanup:
-    needs: [run, validate]
+    needs: [run, validate, ect-run, ect-validate]
     if: always()
     runs-on: ubuntu-latest
     name: Cleanup
@@ -163,5 +345,7 @@ jobs:
       - name: Delete executable artifacts
         uses: geekyeggo/delete-artifact@v5
         with:
-          name: exe-*
+          name: |
+            exe-*
+            ect-history-*
           failOnError: false
