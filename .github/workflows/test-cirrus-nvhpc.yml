@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
@@ -93,7 +93,7 @@ jobs:
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
-          mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
           working-dir: run-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
 
       - name: Upload logs
@@ -138,10 +138,14 @@ jobs:
           expected-configs: >-
             logs-nvhpc-mpich3-nogpu-smiol,
             logs-nvhpc-mpich3-nogpu-pio,
+            logs-nvhpc-mpich-nogpu-smiol,
+            logs-nvhpc-mpich-nogpu-pio,
             logs-nvhpc-openmpi-nogpu-smiol,
             logs-nvhpc-openmpi-nogpu-pio,
             logs-nvhpc-mpich3-cuda-smiol,
             logs-nvhpc-mpich3-cuda-pio,
+            logs-nvhpc-mpich-cuda-smiol,
+            logs-nvhpc-mpich-cuda-pio,
             logs-nvhpc-openmpi-cuda-smiol,
             logs-nvhpc-openmpi-cuda-pio
 
@@ -160,7 +164,7 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
@@ -222,7 +226,7 @@ jobs:
           member-start: '0'
           member-end: '2'
           num-ranks: '4'
-          mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history files
@@ -242,7 +246,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 

@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         io: [smiol, pio]
 
     name: Build (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
@@ -58,7 +58,7 @@ jobs:
       matrix:
         num-procs: [1, 4]
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         io: [smiol, pio]
 
     name: Run ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
@@ -82,7 +82,7 @@ jobs:
         with:
           executable: ./atmosphere_model
           num-procs: ${{ matrix.num-procs }}
-          mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
           working-dir: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}
 
       - name: Upload logs
@@ -122,7 +122,7 @@ jobs:
         shell: bash
         run: |
           COMPILERS=(gcc nvhpc oneapi)
-          MPIS=(mpich3 openmpi)
+          MPIS=(mpich3 mpich openmpi)
           IOS=(smiol pio)
 
           REF_LIST=""
@@ -167,7 +167,7 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         io: [smiol, pio]
         num-procs: [1, 4]
 
@@ -222,7 +222,7 @@ jobs:
           member-start: '0'
           member-end: '2'
           num-ranks: ${{ matrix.num-procs }}
-          mpi-impl: ${{ matrix.mpi == 'mpich3' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history files
@@ -243,7 +243,7 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, openmpi]
+        mpi: [mpich3, mpich, openmpi]
         io: [smiol, pio]
         num-procs: [1, 4]
 
