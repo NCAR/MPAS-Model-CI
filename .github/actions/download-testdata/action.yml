@@ -22,8 +22,8 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Download and extract test case
-      id: extract
+    - name: Resolve archive name
+      id: resolve
       shell: bash
       run: |
         TEST_CASE="${{ inputs.test-case }}"
@@ -38,15 +38,36 @@ runs:
         REPO="${{ inputs.data-repo }}"
         REPO="${REPO:-${DATA_REPO}}"
         ARCHIVE="${RESOLUTION}.tar.gz"
+
+        echo "repo=${REPO}" >> $GITHUB_OUTPUT
+        echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT
+
+    - name: Cache test case archive
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.resolve.outputs.archive }}
+        key: testdata-v1-${{ steps.resolve.outputs.archive }}
+
+    - name: Download test case archive
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        ARCHIVE="${{ steps.resolve.outputs.archive }}"
+        REPO="${{ steps.resolve.outputs.repo }}"
+        echo "Downloading ${ARCHIVE} from ${REPO}..."
+        curl -fsSL --retry 5 --retry-delay 5 "https://github.com/${REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+        echo "Downloaded $(du -h "${ARCHIVE}" | cut -f1)"
+
+    - name: Extract test case
+      id: extract
+      shell: bash
+      run: |
+        ARCHIVE="${{ steps.resolve.outputs.archive }}"
         DEST="${{ inputs.dest-dir }}"
 
-        if [ ! -f "${ARCHIVE}" ]; then
-          echo "Downloading ${ARCHIVE} from ${REPO}..."
-          curl -fsSL --retry 5 --retry-delay 5 "https://github.com/${REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
-          echo "Downloaded $(du -h "${ARCHIVE}" | cut -f1)"
-        else
-          echo "Archive ${ARCHIVE} already present"
-        fi
+        echo "Cache hit: ${{ steps.cache.outputs.cache-hit }}"
+        echo "Archive: ${ARCHIVE} ($(du -h "${ARCHIVE}" | cut -f1))"
 
         tar xzf "${ARCHIVE}"
 
