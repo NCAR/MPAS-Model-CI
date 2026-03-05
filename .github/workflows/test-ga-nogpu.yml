@@ -298,8 +298,10 @@ jobs:
           ls -la ect-test-files/ 2>/dev/null || echo "No history files found"
 
       - name: Run PyCECT
+        id: pycect
         if: steps.summary.outputs.available == 'true'
         run: |
+          LABEL="${{ matrix.compiler }}/${{ matrix.mpi }}/${{ matrix.io }}/${{ matrix.num-procs }}proc"
           set +e
           python pycect/pyCECT.py \
             --sumfile ${{ steps.summary.outputs.summary-file }} \
@@ -313,16 +315,20 @@ jobs:
 
           if [ $PYCECT_STATUS -ne 0 ]; then
             echo "::error::pyCECT crashed with exit code ${PYCECT_STATUS}"
+            echo "result=ERROR" >> $GITHUB_OUTPUT
             exit 1
           fi
 
           if grep -qF '****PASSED****' pycect_output.txt; then
-            echo "::notice::ECT (${{ matrix.compiler }}/${{ matrix.mpi }}/${{ matrix.io }}/${{ matrix.num-procs }}proc): PASSED"
+            echo "::notice::ECT (${LABEL}): PASSED"
+            echo "result=PASSED" >> $GITHUB_OUTPUT
           elif grep -qF '****FAILED****' pycect_output.txt; then
-            echo "::error::ECT (${{ matrix.compiler }}/${{ matrix.mpi }}/${{ matrix.io }}/${{ matrix.num-procs }}proc): FAILED"
+            echo "::error::ECT (${LABEL}): FAILED"
+            echo "result=FAILED" >> $GITHUB_OUTPUT
             exit 1
           else
             echo "::warning::Could not determine ECT result from pyCECT output"
+            echo "result=ERROR" >> $GITHUB_OUTPUT
             exit 1
           fi
 
@@ -331,11 +337,89 @@ jobs:
         run: |
           echo "::notice::ECT validation skipped — ensemble summary file not yet available."
 
+      - name: Write result file
+        if: always()
+        run: |
+          RESULT="${{ steps.pycect.outputs.result }}"
+          if [ -z "${RESULT}" ]; then
+            if [ "${{ steps.summary.outputs.available }}" != "true" ]; then
+              RESULT="SKIPPED"
+            else
+              RESULT="NO_DATA"
+            fi
+          fi
+          echo "${RESULT}" > ect-result.txt
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ect-result-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}-${{ matrix.num-procs }}proc
+          path: ect-result.txt
+          retention-days: 1
+
+  #===========================================================================
+  # ECT SUMMARY: Consolidated ECT results table
+  #===========================================================================
+  ect-summary:
+    needs: ect-validate
+    if: always()
+    runs-on: ubuntu-latest
+    name: ECT Summary
+
+    steps:
+      - name: Download all ECT results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ect-result-*
+          path: ect-results
+
+      - name: Generate summary table
+        shell: bash
+        run: |
+          {
+            echo "## Ensemble Consistency Test (ECT) Results"
+            echo ""
+            echo "| Compiler | MPI | I/O | Ranks | Result |"
+            echo "|----------|-----|-----|-------|--------|"
+
+            PASS=0 FAIL=0 ERROR=0 SKIP=0 TOTAL=0
+            for f in ect-results/ect-result-*/ect-result.txt; do
+              [ -f "$f" ] || continue
+              TOTAL=$((TOTAL + 1))
+              DIR=$(basename "$(dirname "$f")")
+              COMBO="${DIR#ect-result-}"
+
+              COMPILER=$(echo "$COMBO" | cut -d- -f1)
+              MPI=$(echo "$COMBO" | cut -d- -f2)
+              IO=$(echo "$COMBO" | cut -d- -f3)
+              PROCS=$(echo "$COMBO" | cut -d- -f4)
+              RESULT=$(cat "$f" | tr -d '[:space:]')
+
+              case "$RESULT" in
+                PASSED)  ICON="PASSED"; PASS=$((PASS + 1)) ;;
+                FAILED)  ICON="**FAILED**"; FAIL=$((FAIL + 1)) ;;
+                SKIPPED) ICON="SKIPPED"; SKIP=$((SKIP + 1)) ;;
+                *)       ICON="ERROR"; ERROR=$((ERROR + 1)) ;;
+              esac
+
+              echo "| ${COMPILER} | ${MPI} | ${IO} | ${PROCS} | ${ICON} |"
+            done | sort
+
+            echo ""
+            echo "**Total: ${TOTAL}** — ${PASS} passed, ${FAIL} failed, ${ERROR} error, ${SKIP} skipped"
+
+            if [ ${FAIL} -gt 0 ] || [ ${ERROR} -gt 0 ]; then
+              echo ""
+              echo "> One or more ECT validations failed. Check individual ECT Validate job logs for PyCECT details."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   #===========================================================================
   # CLEANUP: Remove executable artifacts
   #===========================================================================
   cleanup:
-    needs: [run, validate, ect-run, ect-validate]
+    needs: [run, validate, ect-run, ect-validate, ect-summary]
     if: always()
     runs-on: ubuntu-latest
     name: Cleanup
