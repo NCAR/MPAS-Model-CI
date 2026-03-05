@@ -42,7 +42,7 @@ runs:
 
         if [ ! -f "${ARCHIVE}" ]; then
           echo "Downloading ${ARCHIVE} from ${REPO}..."
-          curl -fsSL "https://github.com/${REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+          curl -fsSL --retry 5 --retry-delay 5 "https://github.com/${REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
           echo "Downloaded $(du -h "${ARCHIVE}" | cut -f1)"
         else
           echo "Archive ${ARCHIVE} already present"
