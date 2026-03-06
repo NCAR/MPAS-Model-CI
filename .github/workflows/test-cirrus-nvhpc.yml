@@ -288,7 +288,9 @@ jobs:
         run: pip install "numpy<2" scipy netCDF4
 
       - name: Clone PyCECT
-        run: git clone --depth 1 https://github.com/NCAR/PyCECT.git pycect
+        run: |
+          source .github/test-cases/ect-120km/config.env
+          git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
 
       - name: Download ensemble summary file
         id: summary
