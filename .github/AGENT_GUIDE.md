@@ -100,6 +100,37 @@ Key constraints:
 - Summary files and the spin-up restart are versioned and uploaded to `NCAR/mpas-ci-data` with metadata (requires `MPAS_CI_DATA_TOKEN` secret with repo scope)
 - The `output` stream in `streams.atmosphere` defaults to `output_interval="none"` — ECT workflows must override this via sed to produce history files
 
+## Cross-Repo Testing (Testing Upstream MPAS-Model Commits)
+
+All five CI workflows accept `mpas-repository` and `mpas-ref` workflow_dispatch inputs, allowing users to build and test MPAS source from any public fork (e.g. `MPAS-Dev/MPAS-Model`) using this repo's CI infrastructure. See `.github/docs/testing-upstream-commits.md` for user-facing documentation.
+
+How it works:
+- **Build jobs** do a two-step checkout: (1) checkout the target MPAS repo with submodules, (2) overlay `.github/` from MPAS-Model-CI so composite actions (`uses: ./.github/actions/...`) resolve correctly.
+- **Run, validate, ECT, and summary jobs** only checkout MPAS-Model-CI (for composite actions and test case configs). They receive the compiled executable via artifacts, so they never need the MPAS source.
+- When inputs are empty (the default), behavior is identical to a normal run — the workflow checks out MPAS-Model-CI at the triggered ref.
+
+Build job checkout pattern:
+```yaml
+- uses: actions/checkout@v4
+  with:
+    repository: ${{ inputs.mpas-repository || github.repository }}
+    ref: ${{ inputs.mpas-ref || '' }}
+    submodules: 'true'
+
+- uses: actions/checkout@v4
+  if: ${{ inputs.mpas-repository != '' }}
+  with:
+    path: _ci
+    sparse-checkout: .github
+
+- name: Overlay CI infrastructure
+  if: ${{ inputs.mpas-repository != '' }}
+  shell: bash
+  run: cp -r _ci/.github . && rm -rf _ci
+```
+
+The `ect-ensemble-gen.yml` `generate-summary` job uses a variant: it checks out `Registry.xml` from the target MPAS repo (for version metadata) and overlays `config.env` from MPAS-Model-CI.
+
 ## workflow_dispatch Visibility
 
 GitHub only shows the workflow_dispatch trigger button for workflows defined on the **default branch** (master). When adding or modifying workflow_dispatch workflows on feature branches, the workflow file must also exist on master for the UI button to appear. Sync workflow files to master when needed.

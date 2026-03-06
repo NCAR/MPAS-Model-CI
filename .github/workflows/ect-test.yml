@@ -14,6 +14,15 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      mpas-repository:
+        description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model). Leave empty to use this repo.'
+        required: false
+        default: ''
+      mpas-ref:
+        description: 'Git ref (branch, tag, or SHA) in the MPAS source repo'
+        required: false
+        default: ''
 
 jobs:
   #===========================================================================
@@ -28,7 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ inputs.mpas-ref || '' }}
           submodules: 'true'
+
+      - uses: actions/checkout@v4
+        if: ${{ inputs.mpas-repository != '' }}
+        with:
+          path: _ci
+          sparse-checkout: .github
+
+      - name: Overlay CI infrastructure
+        if: ${{ inputs.mpas-repository != '' }}
+        shell: bash
+        run: cp -r _ci/.github . && rm -rf _ci
 
       - name: Build MPAS-A
         uses: ./.github/actions/build-mpas
