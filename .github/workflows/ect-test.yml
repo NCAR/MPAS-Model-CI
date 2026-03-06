@@ -155,84 +155,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyCECT
-        run: pip install "numpy<2" scipy netCDF4
-
-      - name: Clone PyCECT
-        run: |
-          source .github/test-cases/ect-120km/config.env
-          git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
-
-      - name: Download ensemble summary file
-        id: summary
-        run: |
-          source .github/test-cases/ect-120km/config.env
-          SUMMARY="${ECT_SUMMARY_PREFIX}.nc"
-          echo "Downloading ${SUMMARY} from ${DATA_REPO}..."
-          HTTP_CODE=$(curl -sL -w "%{http_code}" \
-            "https://github.com/${DATA_REPO}/raw/main/${SUMMARY}" \
-            -o "${SUMMARY}")
-          if [ "${HTTP_CODE}" != "200" ]; then
-            echo "::warning::Ensemble summary file not yet available in ${DATA_REPO} (HTTP ${HTTP_CODE})"
-            echo "  The summary file must be generated using the ect-ensemble-gen.yml workflow"
-            echo "  and uploaded to ${DATA_REPO} before this test can run."
-            echo "available=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "Downloaded summary file: $(du -h ${SUMMARY})"
-          echo "available=true" >> $GITHUB_OUTPUT
-          echo "summary-file=${SUMMARY}" >> $GITHUB_OUTPUT
-          echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
-
       - name: Download history files
-        if: steps.summary.outputs.available == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: ect-history-*
           path: ect-test-files
           merge-multiple: true
 
-      - name: List test files
-        if: steps.summary.outputs.available == 'true'
-        run: |
-          echo "=== ECT test history files ==="
-          ls -la ect-test-files/ 2>/dev/null || echo "No history files found"
-
-      - name: Run PyCECT
-        if: steps.summary.outputs.available == 'true'
-        run: |
-          # pyCECT always exits 0 — capture output and check for PASSED/FAILED
-          set +e
-          python pycect/pyCECT.py \
-            --sumfile ${{ steps.summary.outputs.summary-file }} \
-            --indir ect-test-files \
-            --tslice ${{ steps.summary.outputs.tslice }} \
-            --mpas \
-            --verbose \
-            2>&1 | tee pycect_output.txt
-          PYCECT_STATUS=$?
-          set -e
-
-          if [ $PYCECT_STATUS -ne 0 ]; then
-            echo "::error::pyCECT crashed with exit code ${PYCECT_STATUS}"
-            exit 1
-          fi
-
-          if grep -qF '****PASSED****' pycect_output.txt; then
-            echo "::notice::ECT result: PASSED"
-          elif grep -qF '****FAILED****' pycect_output.txt; then
-            echo "::error::ECT result: FAILED — code changes may have altered model output beyond internal variability"
-            exit 1
-          else
-            echo "::warning::Could not determine ECT result from pyCECT output"
-            exit 1
-          fi
-
-      - name: Skip notice
-        if: steps.summary.outputs.available != 'true'
-        run: |
-          echo "::notice::ECT validation skipped — ensemble summary file not yet available."
-          echo "Run the ect-ensemble-gen.yml workflow to generate it."
+      - name: Run ECT validation
+        uses: ./.github/actions/validate-ect
+        with:
+          history-dir: ect-test-files
+          label: gcc/openmpi/ect-standalone
 
   #===========================================================================
   # CLEANUP

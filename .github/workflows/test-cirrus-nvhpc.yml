@@ -284,98 +284,24 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyCECT dependencies
-        run: pip install "numpy<2" scipy netCDF4
-
-      - name: Clone PyCECT
-        run: |
-          source .github/test-cases/ect-120km/config.env
-          git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
-
-      - name: Download ensemble summary file
-        id: summary
-        run: |
-          source .github/test-cases/ect-120km/config.env
-          SUMMARY="${ECT_SUMMARY_PREFIX}.nc"
-          echo "Downloading ${SUMMARY} from ${DATA_REPO}..."
-          HTTP_CODE=$(curl -sL -w "%{http_code}" \
-            "https://github.com/${DATA_REPO}/raw/main/${SUMMARY}" \
-            -o "${SUMMARY}")
-          if [ "${HTTP_CODE}" != "200" ]; then
-            echo "::warning::Ensemble summary file not yet available in ${DATA_REPO} (HTTP ${HTTP_CODE})"
-            echo "available=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "Downloaded summary file: $(du -h ${SUMMARY})"
-          echo "available=true" >> $GITHUB_OUTPUT
-          echo "summary-file=${SUMMARY}" >> $GITHUB_OUTPUT
-          echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
-
       - name: Download history files
-        if: steps.summary.outputs.available == 'true'
+        id: download
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ect-history-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
           path: ect-test-files
 
-      - name: List test files
-        if: steps.summary.outputs.available == 'true'
-        run: |
-          echo "=== ECT test history files ==="
-          ls -la ect-test-files/ 2>/dev/null || echo "No history files found"
-
-      - name: Run PyCECT
-        id: pycect
-        if: steps.summary.outputs.available == 'true'
-        run: |
-          LABEL="nvhpc/${{ matrix.mpi }}/${{ matrix.gpu }}/${{ matrix.io }}"
-          set +e
-          python pycect/pyCECT.py \
-            --sumfile ${{ steps.summary.outputs.summary-file }} \
-            --indir ect-test-files \
-            --tslice ${{ steps.summary.outputs.tslice }} \
-            --mpas \
-            --verbose \
-            2>&1 | tee pycect_output.txt
-          PYCECT_STATUS=$?
-          set -e
-
-          if [ $PYCECT_STATUS -ne 0 ]; then
-            echo "::error::pyCECT crashed with exit code ${PYCECT_STATUS}"
-            echo "result=ERROR" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-          if grep -qF '****PASSED****' pycect_output.txt; then
-            echo "::notice::ECT (${LABEL}): PASSED"
-            echo "result=PASSED" >> $GITHUB_OUTPUT
-          elif grep -qF '****FAILED****' pycect_output.txt; then
-            echo "::error::ECT (${LABEL}): FAILED"
-            echo "result=FAILED" >> $GITHUB_OUTPUT
-            exit 1
-          else
-            echo "::warning::Could not determine ECT result from pyCECT output"
-            echo "result=ERROR" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-      - name: Skip notice
-        if: steps.summary.outputs.available != 'true'
-        run: |
-          echo "::notice::ECT validation skipped — ensemble summary file not yet available."
-
-      - name: Write result file
-        if: always()
-        run: |
-          RESULT="${{ steps.pycect.outputs.result }}"
-          if [ -z "${RESULT}" ]; then
-            if [ "${{ steps.summary.outputs.available }}" != "true" ]; then
-              RESULT="SKIPPED"
-            else
-              RESULT="NO_DATA"
-            fi
-          fi
-          echo "${RESULT}" > ect-result.txt
+      - name: Run ECT validation
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/validate-ect
+        with:
+          history-dir: ect-test-files
+          label: nvhpc/${{ matrix.mpi }}/${{ matrix.gpu }}/${{ matrix.io }}
+          dimensions: |
+            mpi=${{ matrix.mpi }}
+            gpu=${{ matrix.gpu }}
+            io=${{ matrix.io }}
 
       - name: Upload result
         if: always()
@@ -395,51 +321,20 @@ jobs:
     name: ECT Summary
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
       - name: Download all ECT results
         uses: actions/download-artifact@v4
         with:
           pattern: ect-result-*
           path: ect-results
 
-      - name: Generate summary table
-        shell: bash
-        run: |
-          {
-            echo "## Ensemble Consistency Test (ECT) Results"
-            echo ""
-            echo "| MPI | GPU | I/O | Result |"
-            echo "|-----|-----|-----|--------|"
-
-            PASS=0 FAIL=0 ERROR=0 SKIP=0 TOTAL=0
-            for f in ect-results/ect-result-*/ect-result.txt; do
-              [ -f "$f" ] || continue
-              TOTAL=$((TOTAL + 1))
-              DIR=$(basename "$(dirname "$f")")
-              COMBO="${DIR#ect-result-nvhpc-}"
-
-              MPI=$(echo "$COMBO" | cut -d- -f1)
-              GPU=$(echo "$COMBO" | cut -d- -f2)
-              IO=$(echo "$COMBO" | cut -d- -f3)
-              RESULT=$(cat "$f" | tr -d '[:space:]')
-
-              case "$RESULT" in
-                PASSED)  ICON="PASSED"; PASS=$((PASS + 1)) ;;
-                FAILED)  ICON="**FAILED**"; FAIL=$((FAIL + 1)) ;;
-                SKIPPED) ICON="SKIPPED"; SKIP=$((SKIP + 1)) ;;
-                *)       ICON="ERROR"; ERROR=$((ERROR + 1)) ;;
-              esac
-
-              echo "| ${MPI} | ${GPU} | ${IO} | ${ICON} |"
-            done | sort
-
-            echo ""
-            echo "**Total: ${TOTAL}** — ${PASS} passed, ${FAIL} failed, ${ERROR} error, ${SKIP} skipped"
-
-            if [ ${FAIL} -gt 0 ] || [ ${ERROR} -gt 0 ]; then
-              echo ""
-              echo "> One or more ECT validations failed. Check individual ECT Validate job logs for PyCECT details."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Generate summary
+        uses: ./.github/actions/ect-summary
+        with:
+          results-path: ect-results
 
   #===========================================================================
   # CLEANUP: Remove executable artifacts

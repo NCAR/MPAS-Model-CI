@@ -23,8 +23,14 @@ This is `NCAR/MPAS-Model-CI`, a fork of `MPAS-Dev/MPAS-Model`. The MPAS source c
 │   ├── run-perturb-mpas/     # Runs perturbed ensemble members for ECT
 │   │   ├── perturb_theta.py  # IC perturbation (theta field)
 │   │   └── trim_history.py   # Trims history files for artifact upload
+│   ├── validate-ect/         # PyCECT validation (shared by all ECT workflows)
+│   ├── ect-summary/          # Consolidated ECT results table generator
 │   └── validate-logs/        # Compares run logs against reference output
 │       └── compare_logs.py   # Log comparison logic
+├── contributors-sync/
+│   ├── generate_ci_docs.py    # Generates ci-cd.md for contributor's guide
+│   ├── sync-docs.yml          # Workflow template for NCAR/contributors-MPAS-A
+│   └── README.md              # Deployment docs for the sync tooling
 ├── docs/
 │   └── testing-upstream-commits.md  # How to test MPAS-Dev/MPAS-Model commits
 ├── test-cases/
@@ -118,6 +124,32 @@ When a `restart-file` is provided:
 3. Creates `restart_timestamp` text file
 4. Sets `config_do_restart = .true.` and `config_start_time = 'file'`
 
+### validate-ect
+
+Runs PyCECT against an ensemble summary file to validate history output. Encapsulates all PyCECT-related logic that was previously duplicated across `test-ga-nogpu.yml`, `test-cirrus-nvhpc.yml`, and `ect-test.yml`.
+
+Key inputs:
+- `history-dir` — path to directory containing history `.nc` files
+- `label` — human-readable label for log annotations (e.g., `gcc/mpich3/smiol/4proc`)
+- `dimensions` — multi-line `key=value` pairs written into the result file for the summary action
+
+The action:
+1. Installs PyCECT dependencies (`numpy<2`, `scipy`, `netCDF4`)
+2. Clones PyCECT at the tag specified by `PYCECT_TAG` in `config.env`
+3. Downloads the ensemble summary file from `NCAR/mpas-ci-data`
+4. Runs `pyCECT.py` and parses the PASSED/FAILED result
+5. Writes an enriched `ect-result.txt` with the result and dimension metadata
+
+Outputs: `result` (PASSED/FAILED/SKIPPED/ERROR) and `available` (whether summary file was found).
+
+### ect-summary
+
+Generates a consolidated ECT results table from enriched result files produced by `validate-ect`. Auto-discovers column names from the key=value pairs in each result file, builds a Markdown table, and writes it to `$GITHUB_STEP_SUMMARY`.
+
+Input: `results-path` — directory containing downloaded `ect-result-*` artifact subdirectories.
+
+Both `test-ga-nogpu.yml` and `test-cirrus-nvhpc.yml` use the same action; column discovery is automatic based on whatever dimensions the `validate-ect` action wrote.
+
 ### validate-logs
 
 Compares run logs against reference output using `compare_logs.py`. Supports:
@@ -206,7 +238,9 @@ The embedded ECT jobs use the gcc-generated ensemble summary for all compiler/MP
 
 ECT runs are batched: all 3 ensemble members run sequentially in a single job per matrix combination (not 3 separate jobs). This reduces redundant container startups and test case downloads.
 
-Each `ect-validate` job writes its result (`PASSED`/`FAILED`/`SKIPPED`/`ERROR`) to a small `ect-result.txt` artifact. A final `ect-summary` job downloads all result artifacts and generates a consolidated Markdown table in `$GITHUB_STEP_SUMMARY`.
+Each `ect-validate` job invokes the `validate-ect` composite action, which installs PyCECT, downloads the summary file, runs validation, and writes an enriched `ect-result.txt` with key=value dimension metadata. The result artifact is uploaded for the summary job. A final `ect-summary` job uses the `ect-summary` composite action, which downloads all result artifacts and generates a consolidated Markdown table in `$GITHUB_STEP_SUMMARY`.
+
+The validate-ect action replaced ~80 lines of duplicated inline logic across three workflows. The ect-summary action replaced ~40 lines duplicated across two workflows.
 
 ### ECT Key Constraints
 
@@ -313,3 +347,5 @@ The CI was built incrementally on the `feature-ci-test-cases` branch. Key milest
 4. Embedded ECT: added `ect-run`/`ect-validate`/`ect-summary` jobs to both main workflows
 5. Optimization: batched ECT members, cached test data, consolidated summary tables
 6. Cross-repo testing: `mpas-repository`/`mpas-ref` inputs for testing upstream commits
+7. ECT modularity: extracted `validate-ect` and `ect-summary` composite actions from duplicated inline logic
+8. Documentation generator: `contributors-sync/generate_ci_docs.py` auto-generates the CI/CD page for the contributor's guide
