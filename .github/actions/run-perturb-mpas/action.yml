@@ -166,21 +166,25 @@ runs:
           ls -la history.*.nc 2>/dev/null || echo "  (none)"
           HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
           if [ -n "${HIST_FILE}" ]; then
-            python3 -c "
+            TSLICE=$(python3 -c "
         import netCDF4, sys
         ds = netCDF4.Dataset(sys.argv[1])
         times = ds.variables.get('xtime')
         ntime = ds.dimensions['Time'].size
+        last = ntime - 1
         print(f'  Selected: {sys.argv[1]} ({ntime} time slice(s))')
         if times is not None:
             for i in range(ntime):
-                print(f'    slice {i}: {times[i].tobytes().decode().strip()}')
+                label = ' <-- using this' if i == last else ''
+                print(f'    slice {i}: {times[i].tobytes().decode().strip()}{label}')
+        print(last)
         ds.close()
-        " "${HIST_FILE}"
+        " "${HIST_FILE}" | tee /dev/stderr | tail -1)
+            echo "[$(date +%H:%M:%S)] Using tslice=${TSLICE} (last time slice)"
             if [ "${TRIM}" = "true" ]; then
               python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/trim_history.py \
                 "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc" \
-                --tslice ${ECT_RAW_TSLICE} \
+                --tslice ${TSLICE} \
                 --exclude-file ${GITHUB_WORKSPACE}/.github/test-cases/${RESOLUTION}/ect_excluded_vars.txt
               echo "[$(date +%H:%M:%S)] Saved trimmed history for member ${MEMBER_ID}"
             else

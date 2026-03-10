@@ -69,6 +69,9 @@ src/core_*/inc
 .github/test-cases/*.tar.gz
 .github/workflows/*.tar.gz
 
+# Reference papers
+*.pdf
+
 # Editor/IDE directories
 .vscode/
 .cursor/

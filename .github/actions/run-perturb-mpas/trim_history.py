@@ -13,11 +13,13 @@ Resolution-specific exclusion lists live in .github/test-cases/<res>/ect_exclude
 and are passed via --exclude-file.
 
 Usage:
-    python3 trim_history.py input.nc output.nc --tslice 0 --exclude-file excluded_vars.txt
+    python3 trim_history.py input.nc output.nc --tslice -1 --exclude-file excluded_vars.txt
 """
 
 import argparse
 import os
+import sys
+
 import netCDF4 as nc
 
 # Static variables PyCECT reads for area-weighted global means
@@ -29,6 +31,12 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
     exclude = set(exclude_vars or [])
 
     with nc.Dataset(infile, 'r') as src, nc.Dataset(outfile, 'w', format='NETCDF4') as dst:
+        ntime = src.dimensions['Time'].size
+        if tslice < 0:
+            tslice = ntime + tslice
+        if tslice < 0 or tslice >= ntime:
+            print(f"ERROR: tslice={tslice} out of range for {ntime} time slice(s) in {infile}")
+            sys.exit(1)
         dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
 
         # Copy ALL dimensions — PyCECT checks nCells/nEdges/nVertices
@@ -89,8 +97,8 @@ if __name__ == '__main__':
         description='Trim MPAS history files for ECT')
     parser.add_argument('input', help='Input history file')
     parser.add_argument('output', help='Output trimmed file')
-    parser.add_argument('--tslice', type=int, default=0,
-                        help='Time slice index to extract')
+    parser.add_argument('--tslice', type=int, default=-1,
+                        help='Time slice index to extract (negative counts from end, e.g. -1 = last)')
     parser.add_argument('--exclude-file',
                         help='File listing variable names to exclude')
     args = parser.parse_args()
