@@ -18,13 +18,14 @@ file-extensions = [
   'F90',
   'f90',
 ]
+force-exclude = true
 ignore = [
   'C003',  # Fortran 2018 `implicit none (external)` not supported by all compilers
   'C182',  # Allow grouped allocate/deallocate statements
   'S102',  # Allow two-space indentation (MPAS convention)
 ]
 line-length = 132
-output-format = 'grouped'
+output-format = 'concise'
 select = [
   'ALL',
 ]
