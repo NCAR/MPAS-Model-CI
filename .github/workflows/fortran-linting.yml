@@ -2,17 +2,12 @@
 # Runs fortitude-lint on MPAS Fortran source to catch style and quality issues.
 # Non-blocking (--exit-zero) until the codebase is cleaned up.
 #
-# On pull requests, uses reviewdog to annotate only lines changed by the PR.
-# On pushes to master/develop, runs a full report saved as an artifact.
-#
 # Adapted from ESCOMP/CAM-SIMA MPAS dynamical core CI.
 
 name: Fortran Linting
 
 permissions:
   contents: read
-  pull-requests: write
-  checks: write
 
 on:
   pull_request:
@@ -46,47 +41,21 @@ jobs:
       - name: Install Fortitude
         run: pip install 'fortitude-lint==0.7.*'
 
-      - name: Install reviewdog
-        if: github.event_name == 'pull_request'
-        uses: reviewdog/action-setup@v1
-
-      - name: Lint (PR — changed lines only)
-        if: github.event_name == 'pull_request'
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ github.token }}
+      - name: Run Fortitude
         run: |
           fortitude \
             --config-file .github/linting/fortitude_config.toml \
             check \
             --exit-zero \
-            --output-format concise \
+            --output-file fortitude-results.log \
             --preview \
-            src/ 2>&1 | tee fortitude-results.log |
-          reviewdog \
-            -efm='%f:%l:%c: %m' \
-            -name='fortitude' \
-            -reporter=github-pr-review \
-            -filter-mode=diff_context \
-            -level=warning \
-            -fail-level=none
+            src/
 
-          echo "=== Full Fortitude Output ==="
-          TOTAL=$(wc -l < fortitude-results.log | tr -d ' ')
-          echo "Total lines of output: ${TOTAL}"
-
-      - name: Lint (push — full report)
-        if: github.event_name != 'pull_request'
-        run: |
-          fortitude \
-            --config-file .github/linting/fortitude_config.toml \
-            check \
-            --exit-zero \
-            --output-format concise \
-            --preview \
-            src/ | tee fortitude-results.log
-
+          echo "=== Fortitude Results ==="
+          cat fortitude-results.log
           echo ""
-          ISSUES=$(wc -l < fortitude-results.log | tr -d ' ')
+
+          ISSUES=$(grep -c '^\s*[0-9]' fortitude-results.log 2>/dev/null || echo 0)
           echo "Total issues: ${ISSUES}"
 
       - name: Upload linting results
