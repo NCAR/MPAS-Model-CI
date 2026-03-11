@@ -76,7 +76,7 @@ jobs:
     name: Build MPAS-A
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -119,7 +119,7 @@ jobs:
     name: 24h Spin-up
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -175,7 +175,7 @@ jobs:
     name: Members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4

@@ -40,7 +40,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -92,7 +92,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -194,7 +194,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
 
     steps:
       - uses: actions/checkout@v4

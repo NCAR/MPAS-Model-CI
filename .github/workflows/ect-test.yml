@@ -32,7 +32,7 @@ jobs:
     name: Build MPAS-A
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +77,7 @@ jobs:
     name: ECT member ${{ matrix.member }}
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
 
     steps:
       - uses: actions/checkout@v4

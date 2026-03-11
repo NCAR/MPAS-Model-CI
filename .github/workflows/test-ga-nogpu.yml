@@ -36,7 +36,7 @@ jobs:
     name: Build (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +86,7 @@ jobs:
     name: Run ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -196,7 +196,7 @@ jobs:
     name: ECT ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
 
     steps:
       - uses: actions/checkout@v4

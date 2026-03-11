@@ -23,7 +23,7 @@ jobs:
     name: Build, Run, and Generate Coverage
     runs-on: ubuntu-latest
     container:
-      image: ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
 
     steps:
       - uses: actions/checkout@v4
