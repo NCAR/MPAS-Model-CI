@@ -93,14 +93,33 @@ jobs:
           test-case: ect-120km
           dest-dir: base-case
 
+      - name: Restore cached restart
+        id: cache-restart
+        uses: actions/cache/restore@v4
+        with:
+          path: spinup-restart.nc
+          key: ect-spinup-restart-${{ github.sha }}
+          restore-keys: ect-spinup-restart-
+
       - name: Download spin-up restart
         id: restart
         shell: bash
         run: |
           source .github/test-cases/ect-120km/config.env
           RESTART="${ECT_SUMMARY_PREFIX}_restart.nc"
+
+          # Use cached file if available
+          if [ -f "spinup-restart.nc" ]; then
+            echo "Using cached restart file"
+            mv spinup-restart.nc "${RESTART}"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Fall back to downloading from mpas-ci-data
           echo "Downloading ${RESTART} from ${DATA_REPO}..."
-          HTTP_CODE=$(curl -sL -w "%{http_code}" \
+          HTTP_CODE=$(curl -sL --retry 3 --retry-delay 5 -w "%{http_code}" \
             "https://github.com/${DATA_REPO}/raw/main/${RESTART}" \
             -o "${RESTART}")
           if [ "${HTTP_CODE}" = "200" ]; then

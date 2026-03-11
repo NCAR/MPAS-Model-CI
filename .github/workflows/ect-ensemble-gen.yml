@@ -155,12 +155,49 @@ jobs:
           echo "Spin-up restart: ${RESTART} ($(du -h ${RESTART} | cut -f1))"
           cp "${RESTART}" spinup-restart.nc
 
-      - name: Upload restart file
+      - name: Upload restart artifact
         uses: actions/upload-artifact@v4
         with:
           name: spinup-restart
           path: spinup-restart.nc
           retention-days: 1
+
+      - name: Cache restart file
+        uses: actions/cache/save@v4
+        with:
+          path: spinup-restart.nc
+          key: ect-spinup-restart-${{ github.sha }}
+
+      - name: Push restart to mpas-ci-data
+        env:
+          CI_DATA_TOKEN: ${{ secrets.MPAS_CI_DATA_TOKEN }}
+        run: |
+          if [ -z "${CI_DATA_TOKEN}" ]; then
+            echo "::warning::MPAS_CI_DATA_TOKEN not set — skipping restart upload to mpas-ci-data."
+            exit 0
+          fi
+
+          source .github/test-cases/ect-120km/config.env
+          RESTART_FILE="${ECT_SUMMARY_PREFIX}_restart.nc"
+          DATA_REPO="${DATA_REPO:-NCAR/mpas-ci-data}"
+
+          git clone --depth 1 "https://x-access-token:${CI_DATA_TOKEN}@github.com/${DATA_REPO}.git" ci-data
+          cp spinup-restart.nc "ci-data/${RESTART_FILE}"
+
+          cd ci-data
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet "${RESTART_FILE}" 2>/dev/null; then
+            echo "Restart file unchanged — skipping push."
+          else
+            git add "${RESTART_FILE}"
+            git commit -m "Update spin-up restart: ${RESTART_FILE}
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            git push
+            echo "Pushed ${RESTART_FILE} to ${DATA_REPO}"
+          fi
 
   #===========================================================================
   # RUN: Batched ensemble members
@@ -294,11 +331,6 @@ jobs:
           path: ensemble-files
           merge-multiple: true
 
-      - name: Download spin-up restart
-        uses: actions/download-artifact@v4
-        with:
-          name: spinup-restart
-
       - name: List ensemble files
         run: |
           echo "=== Ensemble history files ==="
@@ -378,7 +410,7 @@ jobs:
           TSLICE="${{ steps.meta.outputs.tslice }}"
           CURRENT_FILE="${SUMMARY_PREFIX}.nc"
 
-          git clone "https://x-access-token:${CI_DATA_TOKEN}@github.com/${DATA_REPO}.git" ci-data
+          git clone --depth 1 "https://x-access-token:${CI_DATA_TOKEN}@github.com/${DATA_REPO}.git" ci-data
 
           # Archive versioned copy
           mkdir -p ci-data/ect-summaries
@@ -387,9 +419,8 @@ jobs:
           # Update current summary (this is what ect-test.yml downloads)
           cp "${SUMMARY_NAME}" "ci-data/${CURRENT_FILE}"
 
-          # Upload spin-up restart file (used by ect-test.yml)
+          # Restart file is already pushed by the spinup job; reference it in metadata
           RESTART_FILE="${SUMMARY_PREFIX}_restart.nc"
-          cp spinup-restart.nc "ci-data/${RESTART_FILE}"
 
           # Write metadata for current summary
           python3 -c "
@@ -413,7 +444,7 @@ jobs:
           cd ci-data
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${CURRENT_FILE}" "${RESTART_FILE}" "ect-summaries/${SUMMARY_NAME}" ect_summary_metadata.json
+          git add "${CURRENT_FILE}" "ect-summaries/${SUMMARY_NAME}" ect_summary_metadata.json
           MSG="Update ECT summary: MPAS v${VERSION} (${RESOLUTION})"
           MSG="${MSG}
 
