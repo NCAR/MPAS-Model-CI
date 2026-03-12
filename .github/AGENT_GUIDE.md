@@ -33,6 +33,8 @@ This is `NCAR/MPAS-Model-CI`, a fork of `MPAS-Dev/MPAS-Model`. The MPAS source c
 │   └── README.md              # Deployment docs for the sync tooling
 ├── docs/
 │   └── testing-upstream-commits.md  # How to test MPAS-Dev/MPAS-Model commits
+├── linting/
+│   └── fortitude_config.toml  # Fortitude linting rules and exclusions
 ├── test-cases/
 │   ├── 240km/config.env      # Standard test case (6h run, ~20min)
 │   ├── 120km/config.env      # Higher-resolution test case (2h run)
@@ -45,7 +47,15 @@ This is `NCAR/MPAS-Model-CI`, a fork of `MPAS-Dev/MPAS-Model`. The MPAS source c
     ├── test-cirrus-nvhpc.yml  # NVHPC GPU/NoGPU on CIRRUS runners + ECT
     ├── ect-test.yml           # Standalone ECT (3 members, gcc/openmpi)
     ├── ect-ensemble-gen.yml   # Generate 200-member ensemble summary
-    └── coverage.yml           # GCC coverage + Codecov upload
+    ├── coverage.yml           # GCC coverage + Codecov upload
+    ├── fortran-linting.yml    # Fortitude Fortran source linting
+    └── unit-tests.yml         # pFUnit unit tests (standalone procedures)
+
+tests/                         # pFUnit test infrastructure (repo root)
+├── CMakeLists.txt             # Builds mpas_testable_procedures library
+└── unit/
+    ├── CMakeLists.txt         # pFUnit CTest targets
+    └── test_spline_interpolation.pf  # Starter tests (8 tests)
 ```
 
 External: `NCAR/mpas-ci-data` — public repo (Git LFS) hosting test case archives (`240km.tar.gz`, `120km.tar.gz`), ECT ensemble summary files, and spin-up restart files.
@@ -54,7 +64,7 @@ External: `NCAR/mpas-ci-data` — public repo (Git LFS) hosting test case archiv
 
 - **`master`** — default branch, mirrors upstream MPAS-Model. Workflow files must exist here for the workflow_dispatch UI button to appear.
 - **`develop`** — upstream develop branch.
-- **`feature-ci-test-cases`** — **active development branch** for CI. Contains all current work (67 commits ahead of master). This is where new CI features should be developed and tested.
+- **`feature-ci-test-cases`** — **active development branch** for CI. Contains all current work (79 commits ahead of master). This is where new CI features should be developed and tested.
 - **`feature-ci`** — older CI branch, largely superseded by `feature-ci-test-cases`.
 - **`feature-ci-hpcdev-containers`** — experimental branch testing `ncarcisl/hpcdev-x86_64` containers with `gcc14` only. Created from `feature-ci-test-cases` with different container naming conventions. Not actively used.
 
@@ -96,11 +106,23 @@ Expensive workflow (~200 model runs). Generates the PyCECT ensemble summary file
 
 Single-job workflow: builds with GCC coverage flags (`-O0 --coverage`), runs 240km test case at 1 rank, generates lcov report, uploads to Codecov.
 
+### fortran-linting.yml — Fortran Source Linting
+
+Runs `fortitude-lint` on all Fortran source under `src/` (excluding `src/external/` and WRF physics). Triggered on PRs and pushes touching `src/` or linting config. Non-blocking (`--exit-zero`) to establish a baseline — results are uploaded as artifacts. Config lives in `.github/linting/fortitude_config.toml` (all rules enabled, 132-char line limit, single quotes enforced). Adapted from the CAM-SIMA MPAS dynamical core CI.
+
+### unit-tests.yml — pFUnit Unit Tests
+
+Builds and runs pFUnit-based unit tests for standalone MPAS procedures that don't require the full framework. Tests live in `tests/` at the repo root. Currently tests `mpas_spline_interpolation.F` (8 tests covering linear interpolation, cubic splines, and spline integration). Runs across GCC 12/13/14 matrix. pFUnit is cached between runs.
+
+The `tests/CMakeLists.txt` builds a `mpas_testable_procedures` library from `mpas_kind_types.F` and `mpas_spline_interpolation.F`, compiled with `-cpp -ffree-form` (MPAS uses `.F` extension for free-form Fortran, but gfortran treats `.F` as fixed-form by default). To add more testable source files, add them to this library and create new `.pf` test files in `tests/unit/`. Best candidates for expansion: `mpas_geometry_utils.F`, `mpas_sort.F`.
+
 ## Composite Actions
 
 ### build-mpas
 
-Compiles MPAS-A for a given compiler family. Maps input names (`gcc`, `nvhpc`, `oneapi`) to make targets (`gfortran`, `nvhpc`, `intel`). Sources `/container/config_env.sh` for library paths. For NVHPC, prepends `-tp=px` to flags for portable x86-64 binaries (CI build and run happen on different runners).
+Compiles MPAS-A for a given compiler family. Maps input names (`gcc`, `nvhpc`, `oneapi`) to make targets (`gfortran`, `nvhpc`, `intel`). Sources `/container/config_env.sh` for library paths. For NVHPC:
+- Prepends `-tp=px` to flags for portable x86-64 binaries (CI build and run happen on different runners)
+- Passes `MPAS_MPI_F08=0` to make to disable MPI F08 bindings, working around a known incompatibility between MPICH4's F08 bindings and NVHPC's broken CFI implementation (pre-2024 versions). Without this, MPICH4 builds crash at runtime with `CFI_is_contiguous: unsupported array rank`. See [pmodels/mpich#6505](https://github.com/pmodels/mpich/issues/6505). This can be removed when the container upgrades to NVHPC 24.x+.
 
 ### download-testdata
 
@@ -116,7 +138,7 @@ Configures namelist/streams and runs MPAS-A. Calls `download-testdata` internall
 
 ### run-perturb-mpas
 
-Runs perturbed MPAS-A ensemble members for ECT. Contains `perturb_theta.py` (applies O(1e-14) multiplicative perturbation to theta field) and `trim_history.py` (extracts single time slice, removes excluded variables). Supports batched runs via `member-start`/`member-end` inputs.
+Runs perturbed MPAS-A ensemble members for ECT. Contains `perturb_theta.py` (applies O(1e-14) multiplicative perturbation to theta field) and `trim_history.py` (extracts single time slice, removes excluded variables). Supports batched runs via `member-start`/`member-end` inputs. `trim_history.py` defaults to `--tslice -1` (last time slice) and supports negative Python-style indexing. The action auto-detects the last time slice from the history file and logs all available slices with timestamps for debugging.
 
 When a `restart-file` is provided:
 1. Extracts `xtime` variable to get the timestamp
@@ -159,14 +181,14 @@ Compares run logs against reference output using `compare_logs.py`. Supports:
 
 ## Container Environment
 
-All builds and runs use NCAR Docker containers: `ncarcisl/cisldev-x86_64-almalinux9-{compiler}-{mpi}:devel`
+All builds and runs use NCAR Docker containers: `docker.io/ncarcisl/cisldev-x86_64-almalinux9-{compiler}-{mpi}:devel`
 
 Key facts:
+- **Full registry path required**: All container `image:` references must use `docker.io/ncarcisl/...`, not bare `ncarcisl/...`. The CIRRUS Kubernetes cluster requires fully-qualified image paths after a 2026 infrastructure upgrade.
 - `python` is not on PATH; always use `python3`
 - `pip` is not on PATH; use `python3 -m ensurepip --upgrade 2>/dev/null || true` then `python3 -m pip install ...`
 - `/container/config_env.sh` must be sourced before running MPI executables or building
 - `free` may not be available in all containers
-- Container images are pulled from Docker Hub: `ncarcisl/cisldev-x86_64-...`
 
 There is also an alternative container set `ncarcisl/hpcdev-x86_64` with tags like `almalinux9-gcc14-{mpi}-26.02` (tested on `feature-ci-hpcdev-containers` branch). These use a more generic prefix and pinned version tags instead of `:devel`.
 
@@ -188,12 +210,12 @@ The `mpi-impl` mapping in workflows uses `matrix.mpi != 'openmpi' && 'mpich' || 
 | gcc | mpich | pass | **fail** | Same heap corruption as mpich3 |
 | nvhpc | openmpi | pass | **fail** | malloc assertion in nvhpc Fortran runtime |
 | nvhpc | mpich3 | pass | pass | |
-| nvhpc | mpich | fail | fail | Container `LD_LIBRARY_PATH` not set correctly |
+| nvhpc | mpich | pass | **fail** | Requires `MPAS_MPI_F08=0` (CFI bug); 4-proc failure is container issue |
 | oneapi | openmpi | pass | pass | Needs `--allow-run-as-root --oversubscribe` |
 | oneapi | mpich3 | pass | pass | |
 | oneapi | mpich | untested | untested | |
 
-The gcc/mpich and nvhpc/openmpi 4-proc failures are container library issues, not MPAS bugs. They crash with glibc heap corruption during SMIOL parallel I/O initialization. The nvhpc/mpich failures are container environment issues (`LD_LIBRARY_PATH` not set by `/container/config_env.sh`).
+The gcc/mpich and nvhpc/openmpi 4-proc failures are container library issues, not MPAS bugs. They crash with glibc heap corruption during SMIOL parallel I/O initialization. The nvhpc/mpich 1-proc runs now pass with the `MPAS_MPI_F08=0` workaround; 4-proc failures remain a container issue.
 
 **ECT ensemble generation uses gcc/openmpi** because it works at both 1 and 4 ranks with gfortran.
 
@@ -244,9 +266,9 @@ The validate-ect action replaced ~80 lines of duplicated inline logic across thr
 
 ### ECT Key Constraints
 
-- **24-hour spin-up**: Hydrometeor fields are zero in cold-start `init.nc`. The ensemble generation workflow runs a 24h unperturbed simulation (4 MPI ranks, `strict-exit-check: 'false'`) first, then uses the restart file as the starting point for all perturbed members. The restart file is uploaded to `NCAR/mpas-ci-data` so `ect-test.yml` can download it. **MPAS restart requirements**: restart mode needs (1) a file named `restart.YYYY-MM-DD_HH.MM.SS.nc` matching the filename template in `streams.atmosphere`, and (2) a `restart_timestamp` text file containing that timestamp. The `run-perturb-mpas` action handles both automatically. See Price-Broncucia et al. (2025), Section 3.2.
+- **24-hour spin-up**: Hydrometeor fields are zero in cold-start `init.nc`. The ensemble generation workflow runs a 24h unperturbed simulation (4 MPI ranks, `strict-exit-check: 'false'`) first, then uses the restart file as the starting point for all perturbed members. The restart file is both **cached** (`actions/cache/save@v4`, key `ect-spinup-restart-{sha}`) and **pushed to `NCAR/mpas-ci-data`** immediately after the spinup job completes — before ensemble members run. This ensures the restart persists even if later jobs fail. Consumer workflows (`ect-test.yml`, `test-cirrus-nvhpc.yml`) try cache restore first, then fall back to downloading from `mpas-ci-data` via curl. **MPAS restart requirements**: restart mode needs (1) a file named `restart.YYYY-MM-DD_HH.MM.SS.nc` matching the filename template in `streams.atmosphere`, and (2) a `restart_timestamp` text file containing that timestamp. The `run-perturb-mpas` action handles both automatically. See Price-Broncucia et al. (2025), Section 3.2.
 - **PyCECT requires ensemble size >= number of output variables** (~47 after trimming for the 120km case; minimum 48). The default of 200 members is recommended. The tool exits 0 even on failure — always verify the output file exists.
-- History files are trimmed before upload: `run-perturb-mpas/trim_history.py` extracts a single time slice and removes variables listed in `ect_excluded_vars.txt` (PV diagnostics, integers, edge velocity). This keeps artifact sizes manageable for 200-member ensembles.
+- **History time slice selection**: `trim_history.py` always extracts the **last** time slice (`--tslice -1`) from the history file, which is the end-of-run forecast state. This is critical: in cold-start mode (no spin-up restart), MPAS writes the initial state as time slice 0 before any integration — extracting that would show zero variability and PyCECT would fail. The action auto-detects the number of slices and always selects the last one regardless of run mode. Trimmed files also have excluded variables removed (PV diagnostics, integers, edge velocity per `ect_excluded_vars.txt`) to keep artifact sizes manageable.
 - **PyCECT `--jsonfile` path pitfall**: `pyEnsSumMPAS.py` writes auto-detected exclusions to `NEW.<jsonfile>`. If `--jsonfile` includes a directory (e.g., `pycect/exclude.json`), it tries to create `NEW.pycect/exclude.json` — a nonexistent directory — and crashes. Always pass a filename in the working directory, not a subdirectory path.
 - **ECT perturbation magnitude**: The paper recommends O(1e-14) for theta perturbations, matching CESM convention. This requires a run long enough (6 hours) for perturbations to propagate across all fields. Magnitudes of 1e-1 or larger cause NaN divergence.
 - ECT configuration lives in `.github/test-cases/ect-120km/config.env`
@@ -337,6 +359,10 @@ These are downloaded via direct `curl` in workflow steps (not through `download-
 9. **Ignored files**: Some files under `.github/` may be gitignored. Use `git add -f` to force-add them when needed.
 10. **PyCECT numpy compatibility**: PyCECT requires `numpy<2`. Always install with `pip install "numpy<2" scipy netCDF4`.
 11. **NVHPC `-tp=native`**: NVHPC defaults to generating code for the build host's CPU. In CI the build and run happen on different runners, so `build-mpas` patches the Makefile to use `-tp=px` (portable x86-64).
+12. **NVHPC + MPICH4 CFI crash**: MPICH4's F08 bindings call `CFI_is_contiguous`, which crashes on NVHPC versions before 2024 (`unsupported array rank` with garbage values). The `build-mpas` action forces `MPAS_MPI_F08=0` for all NVHPC builds to use `use mpi` instead of `use mpi_f08`. See [pmodels/mpich#6505](https://github.com/pmodels/mpich/issues/6505).
+13. **Container image paths**: All `image:` references in workflow files must use fully-qualified paths (`docker.io/ncarcisl/...`), not bare names (`ncarcisl/...`). The CIRRUS Kubernetes cluster requires this after a 2026 infrastructure upgrade.
+14. **MPAS `.F` files are free-form**: MPAS uses `.F` file extensions for free-form Fortran with C preprocessor directives, but gfortran treats `.F` as fixed-form by default. When compiling MPAS source outside the MPAS Makefile (e.g., pFUnit tests), pass `-cpp -ffree-form` (GCC) or `-fpp -free` (Intel).
+15. **ECT time slice 0 in cold-start mode**: In cold-start mode (`config_do_restart = .false.`), MPAS writes the initial state as time slice 0 in the history file before any time integration. The end-of-run forecast is slice 1. In restart mode, the initial-time output alarm is reset, so only one slice is written (the forecast). Always use `tslice=-1` (last slice) to get the correct state regardless of mode.
 
 ## Development History
 
@@ -349,3 +375,9 @@ The CI was built incrementally on the `feature-ci-test-cases` branch. Key milest
 6. Cross-repo testing: `mpas-repository`/`mpas-ref` inputs for testing upstream commits
 7. ECT modularity: extracted `validate-ect` and `ect-summary` composite actions from duplicated inline logic
 8. Documentation generator: `contributors-sync/generate_ci_docs.py` auto-generates the CI/CD page for the contributor's guide
+9. ECT time slice fix: always extract last time slice from history files, fixing cold-start mode analysis
+10. Fortran linting: `fortitude-lint` workflow with configurable rules, adapted from CAM-SIMA
+11. pFUnit scaffolding: unit test infrastructure with CMake, GCC 12/13/14 matrix, starter spline interpolation tests
+12. Container compatibility: fully-qualified `docker.io/` image paths for CIRRUS cluster upgrades
+13. Restart caching: spin-up restart pushed to `mpas-ci-data` and cached immediately after generation
+14. NVHPC MPICH4 fix: disable MPI F08 bindings (`MPAS_MPI_F08=0`) to work around NVHPC CFI incompatibility
