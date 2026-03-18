@@ -177,11 +177,63 @@ jobs:
           echo "::warning::No log artifacts available — all runs may have been skipped or failed."
 
   #===========================================================================
+  # BUILD-ECT: Double-precision builds for ECT (O(1e-14) perturbations
+  # require double precision to be resolvable in the floating-point format)
+  #===========================================================================
+  build-ect:
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        mpi: [mpich3, mpich, openmpi]
+        gpu: [nogpu, cuda]
+        io: [smiol, pio]
+
+    name: Build ECT (${{ matrix.mpi }}, ${{ matrix.gpu }}, ${{ matrix.io }})
+    runs-on:
+      group: CIRRUS-4x8-gpu
+    container:
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ inputs.mpas-ref || '' }}
+          submodules: 'true'
+
+      - uses: actions/checkout@v4
+        if: ${{ inputs.mpas-repository != '' }}
+        with:
+          path: _ci
+          sparse-checkout: .github
+
+      - name: Overlay CI infrastructure
+        if: ${{ inputs.mpas-repository != '' }}
+        shell: bash
+        run: cp -r _ci/.github . && rm -rf _ci
+
+      - name: Build MPAS-A (double precision)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: nvhpc
+          use-pio: ${{ matrix.io == 'pio' }}
+          openacc: ${{ matrix.gpu == 'cuda' }}
+          precision: double
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-ect-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
+          path: atmosphere_model
+          retention-days: 1
+
+  #===========================================================================
   # ECT RUN: 3 perturbed ensemble members per matrix combination (120km)
   #===========================================================================
   ect-run:
-    needs: build
-    if: always() && needs.build.result != 'cancelled'
+    needs: build-ect
+    if: always() && needs.build-ect.result != 'cancelled'
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -210,7 +262,7 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: exe-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
+          name: exe-ect-nvhpc-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
 
       - name: Download test case
         if: steps.download.outcome == 'success'
@@ -358,7 +410,7 @@ jobs:
   # CLEANUP: Remove executable artifacts
   #===========================================================================
   cleanup:
-    needs: [run, validate, ect-run, ect-validate, ect-summary]
+    needs: [run, validate, build-ect, ect-run, ect-validate, ect-summary]
     if: always()
     runs-on: ubuntu-latest
     name: Cleanup
@@ -369,5 +421,6 @@ jobs:
         with:
           name: |
             exe-*
+            exe-ect-*
             ect-history-*
           failOnError: false

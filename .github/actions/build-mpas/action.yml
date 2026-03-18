@@ -13,6 +13,10 @@ inputs:
     description: 'Enable OpenACC (true/false)'
     required: false
     default: 'false'
+  precision:
+    description: 'Floating-point precision (single or double)'
+    required: false
+    default: 'single'
   build-timeout:
     description: 'Build timeout in minutes'
     required: false
@@ -84,6 +88,7 @@ runs:
         echo "  PNETCDF: ${PNETCDF:-not set}"
         echo "  USE_PIO2: ${USE_PIO2}"
         echo "  OPENACC: ${OPENACC:-false}"
+        echo "  PRECISION: ${{ inputs.precision }}"
         
         # Map COMPILER_FAMILY to make target
         case "${COMPILER_FAMILY}" in
@@ -119,8 +124,13 @@ runs:
         echo "  Make target: ${MAKE_TARGET}"
         echo "  Parallel jobs: ${MAKE_J_PROCS:-$(nproc)}"
 
+        PRECISION_FLAG=""
+        if [ "${{ inputs.precision }}" = "double" ]; then
+          PRECISION_FLAG="PRECISION=double"
+        fi
+
         timeout ${{ inputs.build-timeout }}m \
-          make ${MAKE_TARGET} CORE=atmosphere ${EXTRA_MAKE_FLAGS} --jobs ${MAKE_J_PROCS:-$(nproc)}
+          make ${MAKE_TARGET} CORE=atmosphere ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}
         
         # Set output
         echo "executable=$(pwd)/atmosphere_model" >> $GITHUB_OUTPUT

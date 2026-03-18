@@ -52,10 +52,11 @@ jobs:
         shell: bash
         run: cp -r _ci/.github . && rm -rf _ci
 
-      - name: Build MPAS-A
+      - name: Build MPAS-A (double precision)
         uses: ./.github/actions/build-mpas
         with:
           compiler: gfortran
+          precision: double
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
