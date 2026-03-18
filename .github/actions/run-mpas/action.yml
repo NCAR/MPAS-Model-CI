@@ -165,7 +165,9 @@ runs:
         elif [ "${MPI_IMPL}" = "mpich" ]; then
           # Prevent yaksa from trying to initialize CUDA when only stub
           # libraries are present. OpenACC GPU computation is unaffected.
+          # See: https://github.com/pmodels/mpich/issues/6523
           export MPICH_GPU_SUPPORT_ENABLED=0
+          export MPIR_CVAR_ENABLE_GPU=0
         fi
         
         # Set unlimited stack size
