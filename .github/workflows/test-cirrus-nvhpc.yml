@@ -30,7 +30,7 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 4
       matrix:
         mpi: [mpich3, mpich, openmpi]
         gpu: [nogpu, cuda]
@@ -82,7 +82,7 @@ jobs:
     if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 4
       matrix:
         mpi: [mpich3, mpich, openmpi]
         gpu: [nogpu, cuda]
@@ -184,7 +184,7 @@ jobs:
     if: always() && needs.build.result != 'cancelled'
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 4
       matrix:
         mpi: [mpich3, mpich, openmpi]
         gpu: [nogpu, cuda]
