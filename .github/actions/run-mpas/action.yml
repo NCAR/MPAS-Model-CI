@@ -153,6 +153,14 @@ runs:
           source /container/config_env.sh
         fi
         
+        # Workaround: some container images (e.g. mpich-cuda) omit LD_LIBRARY_PATH
+        # from config_env.sh, preventing the NVHPC runtime from finding libcuda.so
+        # injected by the Kubernetes NVIDIA device plugin. Remove once the MPICH-CUDA
+        # container images are fixed upstream.
+        if [ -z "${LD_LIBRARY_PATH}" ]; then
+          export LD_LIBRARY_PATH="/usr/lib64:/usr/lib"
+        fi
+        
         # Set MPI implementation
         if [ -n "${{ inputs.mpi-impl }}" ]; then
           export MPI_IMPL="${{ inputs.mpi-impl }}"
