@@ -48,11 +48,6 @@ on:
         required: false
         default: 'mpich'
 
-env:
-  CONTAINER_IMAGE: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
-  COMPILER: ${{ inputs.compiler || 'nvhpc' }}
-  MPI_IMPL: ${{ inputs.mpi-impl || 'mpich' }}
-
 jobs:
   #===========================================================================
   # PREPARE: Compute batch matrix
@@ -90,10 +85,10 @@ jobs:
   # BUILD
   #===========================================================================
   build:
-    name: Build MPAS-A (${{ env.COMPILER }}/${{ env.MPI_IMPL }})
+    name: Build MPAS-A (${{ inputs.compiler || 'nvhpc' }}/${{ inputs.mpi-impl || 'mpich' }})
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.CONTAINER_IMAGE }}
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -116,7 +111,7 @@ jobs:
       - name: Build MPAS-A (double precision)
         uses: ./.github/actions/build-mpas
         with:
-          compiler: ${{ env.COMPILER == 'gcc' && 'gfortran' || env.COMPILER }}
+          compiler: ${{ (inputs.compiler || 'nvhpc') == 'gcc' && 'gfortran' || (inputs.compiler || 'nvhpc') }}
           precision: double
 
       - name: Upload executable
@@ -137,7 +132,7 @@ jobs:
     name: 24h Spin-up
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.CONTAINER_IMAGE }}
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -156,7 +151,7 @@ jobs:
           executable: ./atmosphere_model
           resolution: ect-120km
           num-procs: '4'
-          mpi-impl: ${{ env.MPI_IMPL }}
+          mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
           run-duration: '1_00:00:00'
           restart-interval: '1_00:00:00'
           run-timeout: '350'
@@ -230,7 +225,7 @@ jobs:
     name: Members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.CONTAINER_IMAGE }}
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
 
     steps:
       - uses: actions/checkout@v4
@@ -262,7 +257,7 @@ jobs:
           member-start: ${{ matrix.batch.start }}
           member-end: ${{ matrix.batch.end }}
           num-ranks: ${{ inputs.num-ranks || 4 }}
-          mpi-impl: ${{ env.MPI_IMPL }}
+          mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
           restart-file: spinup-restart.nc
 
       - name: Upload history files
