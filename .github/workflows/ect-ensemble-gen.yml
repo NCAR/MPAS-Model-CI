@@ -35,6 +35,23 @@ on:
         type: number
         required: false
         default: 4
+      compiler:
+        description: 'Compiler suite (gcc or nvhpc)'
+        type: choice
+        options: [gcc, nvhpc]
+        required: false
+        default: 'nvhpc'
+      mpi-impl:
+        description: 'MPI implementation (mpich, openmpi, mpich3)'
+        type: choice
+        options: [mpich, openmpi, mpich3]
+        required: false
+        default: 'mpich'
+
+env:
+  CONTAINER_IMAGE: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
+  COMPILER: ${{ inputs.compiler || 'nvhpc' }}
+  MPI_IMPL: ${{ inputs.mpi-impl || 'mpich' }}
 
 jobs:
   #===========================================================================
@@ -73,10 +90,10 @@ jobs:
   # BUILD
   #===========================================================================
   build:
-    name: Build MPAS-A
+    name: Build MPAS-A (${{ env.COMPILER }}/${{ env.MPI_IMPL }})
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: ${{ env.CONTAINER_IMAGE }}
 
     steps:
       - uses: actions/checkout@v4
@@ -99,7 +116,7 @@ jobs:
       - name: Build MPAS-A (double precision)
         uses: ./.github/actions/build-mpas
         with:
-          compiler: gfortran
+          compiler: ${{ env.COMPILER == 'gcc' && 'gfortran' || env.COMPILER }}
           precision: double
 
       - name: Upload executable
@@ -120,7 +137,7 @@ jobs:
     name: 24h Spin-up
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: ${{ env.CONTAINER_IMAGE }}
 
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +156,7 @@ jobs:
           executable: ./atmosphere_model
           resolution: ect-120km
           num-procs: '4'
-          mpi-impl: 'openmpi'
+          mpi-impl: ${{ env.MPI_IMPL }}
           run-duration: '1_00:00:00'
           restart-interval: '1_00:00:00'
           run-timeout: '350'
@@ -213,7 +230,7 @@ jobs:
     name: Members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: ${{ env.CONTAINER_IMAGE }}
 
     steps:
       - uses: actions/checkout@v4
@@ -245,6 +262,7 @@ jobs:
           member-start: ${{ matrix.batch.start }}
           member-end: ${{ matrix.batch.end }}
           num-ranks: ${{ inputs.num-ranks || 4 }}
+          mpi-impl: ${{ env.MPI_IMPL }}
           restart-file: spinup-restart.nc
 
       - name: Upload history files
@@ -299,9 +317,15 @@ jobs:
           DATE=$(date -u +%Y-%m-%d)
           SUMMARY_NAME="${ECT_SUMMARY_PREFIX}_v${VERSION}_${DATE//-/}.nc"
 
+          # Use the actual MPAS source repo/ref, not the workflow trigger context
+          MPAS_REPO="${{ inputs.mpas-repository || github.repository }}"
+          MPAS_BRANCH="${{ inputs.mpas-ref || github.ref_name }}"
+          MPAS_COMMIT=$(git -C mpas-source rev-parse --short=8 HEAD)
+
           echo "mpas-version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "branch=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          echo "commit=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          echo "mpas-repo=${MPAS_REPO}" >> $GITHUB_OUTPUT
+          echo "branch=${MPAS_BRANCH}" >> $GITHUB_OUTPUT
+          echo "commit=${MPAS_COMMIT}" >> $GITHUB_OUTPUT
           echo "date=${DATE}" >> $GITHUB_OUTPUT
           echo "resolution=${RESOLUTION}" >> $GITHUB_OUTPUT
           echo "ensemble-size=${{ needs.prepare.outputs.ensemble-size }}" >> $GITHUB_OUTPUT
@@ -310,9 +334,10 @@ jobs:
           echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
 
           echo "=== ECT Metadata ==="
+          echo "  MPAS repo:    ${MPAS_REPO}"
           echo "  MPAS version: ${VERSION}"
-          echo "  Branch:       ${GITHUB_REF_NAME}"
-          echo "  Commit:       ${GITHUB_SHA::8}"
+          echo "  Branch:       ${MPAS_BRANCH}"
+          echo "  Commit:       ${MPAS_COMMIT}"
           echo "  Resolution:   ${RESOLUTION}"
           echo "  Ensemble:     ${{ needs.prepare.outputs.ensemble-size }} members"
           echo "  Summary:      ${SUMMARY_NAME}"
@@ -423,12 +448,15 @@ jobs:
           # Restart file is already pushed by the spinup job; reference it in metadata
           RESTART_FILE="${SUMMARY_PREFIX}_restart.nc"
 
+          MPAS_REPO="${{ steps.meta.outputs.mpas-repo }}"
+
           # Write metadata for current summary
           python3 -c "
           import json
           json.dump({
               'current_summary': '${CURRENT_FILE}',
               'versioned_summary': 'ect-summaries/${SUMMARY_NAME}',
+              'mpas_repo': '${MPAS_REPO}',
               'mpas_version': '${VERSION}',
               'branch': '${BRANCH}',
               'commit': '${COMMIT}',
@@ -449,6 +477,7 @@ jobs:
           MSG="Update ECT summary: MPAS v${VERSION} (${RESOLUTION})"
           MSG="${MSG}
 
+          Source:   ${MPAS_REPO}
           Archived: ect-summaries/${SUMMARY_NAME}
           Branch:   ${BRANCH}
           Commit:   ${COMMIT}
@@ -470,6 +499,7 @@ jobs:
           echo "  ECT Ensemble Summary Generated"
           echo "=========================================="
           echo ""
+          echo "  MPAS repo:     ${{ steps.meta.outputs.mpas-repo }}"
           echo "  MPAS version:  ${{ steps.meta.outputs.mpas-version }}"
           echo "  Branch:        ${{ steps.meta.outputs.branch }}"
           echo "  Commit:        ${{ steps.meta.outputs.commit }}"
