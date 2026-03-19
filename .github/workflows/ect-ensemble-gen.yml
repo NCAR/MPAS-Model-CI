@@ -327,6 +327,12 @@ jobs:
           echo "summary-prefix=${ECT_SUMMARY_PREFIX}" >> $GITHUB_OUTPUT
           echo "summary-name=${SUMMARY_NAME}" >> $GITHUB_OUTPUT
           echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
+          echo "compiler=${{ inputs.compiler || 'nvhpc' }}" >> $GITHUB_OUTPUT
+          echo "mpi-impl=${{ inputs.mpi-impl || 'mpich' }}" >> $GITHUB_OUTPUT
+          echo "precision=double" >> $GITHUB_OUTPUT
+          echo "run-duration=${RUN_DURATION}" >> $GITHUB_OUTPUT
+          echo "perturb-magnitude=${ECT_PERTURB_MAGNITUDE}" >> $GITHUB_OUTPUT
+          echo "perturb-variable=${ECT_PERTURB_VARIABLE}" >> $GITHUB_OUTPUT
 
           echo "=== ECT Metadata ==="
           echo "  MPAS repo:    ${MPAS_REPO}"
@@ -334,6 +340,11 @@ jobs:
           echo "  Branch:       ${MPAS_BRANCH}"
           echo "  Commit:       ${MPAS_COMMIT}"
           echo "  Resolution:   ${RESOLUTION}"
+          echo "  Compiler:     ${{ inputs.compiler || 'nvhpc' }}"
+          echo "  MPI:          ${{ inputs.mpi-impl || 'mpich' }}"
+          echo "  Precision:    double"
+          echo "  Run duration: ${RUN_DURATION}"
+          echo "  Perturbation: ${ECT_PERTURB_MAGNITUDE} (${ECT_PERTURB_VARIABLE})"
           echo "  Ensemble:     ${{ needs.prepare.outputs.ensemble-size }} members"
           echo "  Summary:      ${SUMMARY_NAME}"
 
@@ -453,6 +464,12 @@ jobs:
           RESTART_FILE="${SUMMARY_PREFIX}_restart.nc"
 
           MPAS_REPO="${{ steps.meta.outputs.mpas-repo }}"
+          COMPILER="${{ steps.meta.outputs.compiler }}"
+          MPI_IMPL="${{ steps.meta.outputs.mpi-impl }}"
+          PRECISION="${{ steps.meta.outputs.precision }}"
+          RUN_DURATION="${{ steps.meta.outputs.run-duration }}"
+          PERTURB_MAG="${{ steps.meta.outputs.perturb-magnitude }}"
+          PERTURB_VAR="${{ steps.meta.outputs.perturb-variable }}"
 
           # Write metadata for current summary
           python3 -c "
@@ -465,10 +482,20 @@ jobs:
               'branch': '${BRANCH}',
               'commit': '${COMMIT}',
               'resolution': '${RESOLUTION}',
-              'ensemble_size': int('${ESIZE}'),
-              'generated': '${DATE}',
-              'pycect_tslice': int('${TSLICE}'),
+              'build': {
+                  'compiler': '${COMPILER}',
+                  'mpi': '${MPI_IMPL}',
+                  'precision': '${PRECISION}'
+              },
+              'run': {
+                  'duration': '${RUN_DURATION}',
+                  'perturbation_magnitude': '${PERTURB_MAG}',
+                  'perturbation_variable': '${PERTURB_VAR}',
+                  'ensemble_size': int('${ESIZE}'),
+                  'pycect_tslice': int('${TSLICE}')
+              },
               'restart_file': '${RESTART_FILE}',
+              'generated': '${DATE}',
               'workflow_run': '${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}'
           }, open('ci-data/ect_summary_metadata.json', 'w'), indent=2)
           print('Wrote ect_summary_metadata.json')
@@ -481,13 +508,17 @@ jobs:
           MSG="Update ECT summary: MPAS v${VERSION} (${RESOLUTION})"
           MSG="${MSG}
 
-          Source:   ${MPAS_REPO}
-          Archived: ect-summaries/${SUMMARY_NAME}
-          Branch:   ${BRANCH}
-          Commit:   ${COMMIT}
-          Ensemble: ${ESIZE} members
-          Generated: ${DATE}
-          Run:      ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          Source:     ${MPAS_REPO}
+          Branch:     ${BRANCH}
+          Commit:     ${COMMIT}
+          Compiler:   ${COMPILER}/${MPI_IMPL}
+          Precision:  ${PRECISION}
+          Duration:   ${RUN_DURATION}
+          Perturb:    ${PERTURB_MAG} (${PERTURB_VAR})
+          Ensemble:   ${ESIZE} members
+          Archived:   ect-summaries/${SUMMARY_NAME}
+          Generated:  ${DATE}
+          Run:        ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           git commit -m "${MSG}"
           git push
 
@@ -508,6 +539,10 @@ jobs:
           echo "  Branch:        ${{ steps.meta.outputs.branch }}"
           echo "  Commit:        ${{ steps.meta.outputs.commit }}"
           echo "  Resolution:    ${{ steps.meta.outputs.resolution }}"
+          echo "  Compiler:      ${{ steps.meta.outputs.compiler }}/${{ steps.meta.outputs.mpi-impl }}"
+          echo "  Precision:     ${{ steps.meta.outputs.precision }}"
+          echo "  Duration:      ${{ steps.meta.outputs.run-duration }}"
+          echo "  Perturbation:  ${{ steps.meta.outputs.perturb-magnitude }} (${{ steps.meta.outputs.perturb-variable }})"
           echo "  Ensemble size: ${{ steps.meta.outputs.ensemble-size }}"
           echo "  Date:          ${{ steps.meta.outputs.date }}"
           echo ""
