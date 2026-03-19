@@ -352,14 +352,23 @@ jobs:
           path: ensemble-files
           merge-multiple: true
 
-      - name: List ensemble files
+      - name: Validate ensemble files
         run: |
-          echo "=== Ensemble history files ==="
-          ls -la ensemble-files/
-          NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
-          echo "Total files: ${NFILES}"
-          if [ "${NFILES}" -lt 48 ]; then
-            echo "::error::Too few ensemble members (${NFILES}). PyCECT needs more members than output variables (~47 after trimming). Recommended: 200."
+          echo "=== Validating ensemble history files ==="
+          GOOD=0
+          BAD=0
+          for f in ensemble-files/history.*.nc; do
+            if python3 -c "import netCDF4; netCDF4.Dataset('$f').close()" 2>/dev/null; then
+              GOOD=$((GOOD + 1))
+            else
+              echo "::warning::Removing corrupted file: $f"
+              rm -f "$f"
+              BAD=$((BAD + 1))
+            fi
+          done
+          echo "Valid: ${GOOD}, Corrupted: ${BAD}"
+          if [ "${GOOD}" -lt 48 ]; then
+            echo "::error::Too few valid ensemble members (${GOOD}). PyCECT needs more members than output variables (~47 after trimming). Recommended: 200."
             exit 1
           fi
 
@@ -370,7 +379,7 @@ jobs:
           ESIZE=${{ needs.prepare.outputs.ensemble-size }}
           NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
           if [ "${NFILES}" -lt "${ESIZE}" ]; then
-            echo "::warning::Only ${NFILES} of ${ESIZE} requested members available"
+            echo "::warning::Only ${NFILES} of ${ESIZE} requested members available (some may have been removed due to corruption)"
             ESIZE=${NFILES}
           fi
 
@@ -517,11 +526,17 @@ jobs:
     name: Cleanup
 
     steps:
-      - name: Delete intermediate artifacts
+      - name: Delete build artifacts
         uses: geekyeggo/delete-artifact@v5
         with:
           name: |
             exe-ect-ensemble
             spinup-restart
-            ect-ensemble-*
+          failOnError: false
+
+      - name: Delete ensemble artifacts (only after successful summary)
+        if: needs.generate-summary.result == 'success'
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: ect-ensemble-*
           failOnError: false
