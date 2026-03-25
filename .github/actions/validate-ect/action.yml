@@ -50,7 +50,7 @@ runs:
         source .github/test-cases/${{ inputs.test-case }}/config.env
         SUMMARY="${ECT_SUMMARY_PREFIX}.nc"
         echo "Downloading ${SUMMARY} from ${DATA_REPO}..."
-        HTTP_CODE=$(curl -sL -w "%{http_code}" \
+        HTTP_CODE=$(curl --retry 5 --retry-delay 5 -sL -w "%{http_code}" \
           "https://github.com/${DATA_REPO}/raw/main/${SUMMARY}" \
           -o "${SUMMARY}")
         if [ "${HTTP_CODE}" != "200" ]; then
