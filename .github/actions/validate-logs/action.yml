@@ -17,6 +17,10 @@ inputs:
     description: 'Comma-separated list of expected config names; missing ones shown as NO_LOG'
     required: false
     default: ''
+  allow-missing:
+    description: 'Do not fail when some configurations have no log files (default: true for backward compat)'
+    required: false
+    default: 'true'
 
 outputs:
   status:
@@ -61,7 +65,10 @@ runs:
         fi
 
         ARGS=("${SCRIPT}" "${{ inputs.logs-path }}" "${{ inputs.reference-log }}")
-        ARGS+=(--allow-missing --summary-file "$GITHUB_STEP_SUMMARY")
+        ARGS+=(--summary-file "$GITHUB_STEP_SUMMARY")
+        if [ "${{ inputs.allow-missing }}" = "true" ]; then
+          ARGS+=(--allow-missing)
+        fi
 
         if [ -n "${{ inputs.log-filter }}" ]; then
           ARGS+=(--filter "${{ inputs.log-filter }}")
