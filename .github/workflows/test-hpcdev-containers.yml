@@ -1,0 +1,129 @@
+# Subset CI: hpcdev container images (Ben Kirk's updated containers)
+# Tests the new ncarcisl/hpcdev-x86_64 container images with pinned
+# version tags, replacing the rolling :devel tags in cisldev containers.
+#
+# Currently tests gcc14 only. Expand compiler matrix as new container
+# images become available.
+#
+# Container naming:
+#   Old (cisldev): ncarcisl/cisldev-x86_64-almalinux9-{compiler}-{mpi}:devel
+#   New (hpcdev):  ncarcisl/hpcdev-x86_64:almalinux9-{compiler}{version}-{mpi}-{tag}
+
+name: "hpcdev containers"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [mpich, openmpi]
+
+    name: Build (gcc14, ${{ matrix.mpi }}, smiol)
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/hpcdev-x86_64:almalinux9-gcc14-${{ matrix.mpi }}-26.02
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: gcc
+          use-pio: 'false'
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-gcc14-${{ matrix.mpi }}-smiol
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: build
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [mpich, openmpi]
+
+    name: Run 1proc (gcc14, ${{ matrix.mpi }}, smiol)
+    runs-on: ubuntu-latest
+    container:
+      image: ncarcisl/hpcdev-x86_64:almalinux9-gcc14-${{ matrix.mpi }}-26.02
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download executable
+        id: download
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: exe-gcc14-${{ matrix.mpi }}-smiol
+
+      - name: Run MPAS-A
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '1'
+          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
+          working-dir: run-gcc14-${{ matrix.mpi }}-smiol
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always() && steps.download.outcome == 'success'
+        with:
+          name: logs-1proc-gcc14-${{ matrix.mpi }}-nogpu-smiol
+          path: run-gcc14-${{ matrix.mpi }}-smiol/log.*
+          retention-days: 5
+
+  validate:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    name: Validate Results
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download all logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: logs-*
+          path: logs
+
+      - name: Validate 1-proc logs against reference
+        uses: ./.github/actions/validate-logs
+        with:
+          logs-path: logs
+          log-filter: 1proc
+          reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
+          expected-configs: >-
+            logs-1proc-gcc14-mpich-nogpu-smiol,
+            logs-1proc-gcc14-openmpi-nogpu-smiol
+
+  cleanup:
+    needs: [run, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+
+    steps:
+      - name: Delete artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: exe-*
+          failOnError: false
