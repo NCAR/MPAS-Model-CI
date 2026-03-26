@@ -29,6 +29,7 @@ jobs:
     outputs:
       image-prefix: ${{ steps.container.outputs.container-prefix }}
       image-suffix: ${{ steps.container.outputs.container-suffix }}
+      image-gpu-suffix: ${{ steps.container.outputs.container-gpu-suffix }}
       compiler-name: ${{ steps.container.outputs.compiler-name }}
       mpi-map: ${{ steps.container.outputs.mpi-map }}
     steps:
@@ -58,7 +59,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && needs.config.outputs.image-gpu-suffix || needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +111,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && needs.config.outputs.image-gpu-suffix || needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -208,7 +209,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && needs.config.outputs.image-gpu-suffix || needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -261,7 +262,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && needs.config.outputs.image-gpu-suffix || needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4

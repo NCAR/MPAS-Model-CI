@@ -1,5 +1,5 @@
 name: 'Resolve Container Image'
-description: 'Assemble a container image name from ci-config.env settings'
+description: 'Assemble a container image name from ci-config.env templates'
 
 inputs:
   compiler:
@@ -21,8 +21,11 @@ outputs:
     description: 'Image prefix (everything before {compiler}-{mpi})'
     value: ${{ steps.resolve.outputs.container-prefix }}
   container-suffix:
-    description: 'Image suffix after {compiler}-{mpi} (excludes GPU; insert GPU part before this for matrix workflows)'
+    description: 'Image suffix (everything after {compiler}-{mpi}, excludes GPU for matrix use)'
     value: ${{ steps.resolve.outputs.container-suffix }}
+  container-gpu-suffix:
+    description: 'Image suffix for GPU containers'
+    value: ${{ steps.resolve.outputs.container-gpu-suffix }}
   compiler-name:
     description: 'Compiler name as it appears in the container image tag'
     value: ${{ steps.resolve.outputs.compiler-name }}
@@ -50,85 +53,67 @@ runs:
         fi
         source "${CI_CONFIG}"
 
-        STYLE="${CONTAINER_STYLE}"
-        REGISTRY="${CONTAINER_REGISTRY}"
-        OS="${CONTAINER_OS}"
         COMPILER="${{ inputs.compiler }}"
         MPI="${{ inputs.mpi }}"
         GPU="${{ inputs.gpu }}"
 
-        # Resolve compiler name for this style
-        VARNAME="CONTAINER_COMPILER_${STYLE}_${COMPILER}"
-        COMPILER_NAME="${!VARNAME}"
-        if [ -z "${COMPILER_NAME}" ]; then
-          echo "::error::No container compiler mapping for ${VARNAME}. Add it to .github/ci-config.env"
-          exit 1
+        # Resolve compiler name (fallback to raw value if no mapping)
+        comp_var="CONTAINER_COMPILER_${COMPILER}"
+        COMPILER_NAME="${!comp_var:-$COMPILER}"
+
+        # Resolve MPI name (fallback to raw value if no mapping)
+        mpi_var="CONTAINER_MPI_${MPI}"
+        MPI_NAME="${!mpi_var:-$MPI}"
+
+        # Pick template based on GPU input
+        if [ -n "${GPU}" ] && [ -n "${CONTAINER_IMAGE_GPU}" ]; then
+          TEMPLATE="${CONTAINER_IMAGE_GPU}"
+        else
+          TEMPLATE="${CONTAINER_IMAGE}"
         fi
 
-        # Resolve MPI name for this style
-        VARNAME="CONTAINER_MPI_${STYLE}_${MPI}"
-        MPI_NAME="${!VARNAME}"
-        if [ -z "${MPI_NAME}" ]; then
-          echo "::error::No container MPI mapping for ${VARNAME}. Add it to .github/ci-config.env"
-          exit 1
-        fi
+        # Substitute placeholders
+        IMAGE="${TEMPLATE//\{compiler\}/$COMPILER_NAME}"
+        IMAGE="${IMAGE//\{mpi\}/$MPI_NAME}"
 
-        # Build compiler map JSON (all families for this style)
+        # Extract prefix (everything before -{compiler}) and suffix
+        # (everything after {mpi}) from the non-GPU template for matrix use
+        PREFIX=$(echo "${CONTAINER_IMAGE}" | sed 's/-{compiler}.*//')
+        SUFFIX=$(echo "${CONTAINER_IMAGE}" | sed 's/.*{mpi}//')
+        GPU_SUFFIX=$(echo "${CONTAINER_IMAGE_GPU}" | sed 's/.*{mpi}//')
+
+        # Build compiler map JSON
         CMAP="{"
         for family in gcc nvhpc oneapi; do
-          VARNAME="CONTAINER_COMPILER_${STYLE}_${family}"
-          NAME="${!VARNAME}"
-          if [ -n "${NAME}" ]; then
-            [ "${CMAP}" != "{" ] && CMAP="${CMAP},"
-            CMAP="${CMAP}\"${family}\":\"${NAME}\""
-          fi
+          comp_var="CONTAINER_COMPILER_${family}"
+          NAME="${!comp_var:-$family}"
+          [ "${CMAP}" != "{" ] && CMAP="${CMAP},"
+          CMAP="${CMAP}\"${family}\":\"${NAME}\""
         done
         CMAP="${CMAP}}"
 
-        # Build MPI map JSON (all implementations for this style)
+        # Build MPI map JSON
         MMAP="{"
         for impl in openmpi mpich; do
-          VARNAME="CONTAINER_MPI_${STYLE}_${impl}"
-          NAME="${!VARNAME}"
-          if [ -n "${NAME}" ]; then
-            [ "${MMAP}" != "{" ] && MMAP="${MMAP},"
-            MMAP="${MMAP}\"${impl}\":\"${NAME}\""
-          fi
+          mpi_var="CONTAINER_MPI_${impl}"
+          NAME="${!mpi_var:-$impl}"
+          [ "${MMAP}" != "{" ] && MMAP="${MMAP},"
+          MMAP="${MMAP}\"${impl}\":\"${NAME}\""
         done
         MMAP="${MMAP}}"
 
-        GPU_PART=""
-        if [ -n "${GPU}" ]; then
-          GPU_PART="-${GPU}"
-        fi
-
-        # Assemble prefix and base suffix (without GPU) based on style
-        case "${STYLE}" in
-          cisldev)
-            PREFIX="${REGISTRY}/cisldev-x86_64-${OS}"
-            BASE_SUFFIX=":${CONTAINER_CISLDEV_TAG}"
-            ;;
-          hpcdev)
-            PREFIX="${REGISTRY}/hpcdev-x86_64:${OS}"
-            BASE_SUFFIX="-${CONTAINER_HPCDEV_VERSION}"
-            ;;
-          *)
-            echo "::error::Unknown CONTAINER_STYLE=${STYLE}. Use 'cisldev' or 'hpcdev'."
-            exit 1
-            ;;
-        esac
-
-        IMAGE="${PREFIX}-${COMPILER_NAME}-${MPI_NAME}${GPU_PART}${BASE_SUFFIX}"
-
         echo "Resolved container image: ${IMAGE}"
-        echo "  Style:    ${STYLE}"
-        echo "  Compiler: ${COMPILER} → ${COMPILER_NAME}"
-        echo "  MPI:      ${MPI} → ${MPI_NAME}"
-        echo "  GPU:      ${GPU:-none}"
+        echo "  Template:  ${TEMPLATE}"
+        echo "  Compiler:  ${COMPILER} → ${COMPILER_NAME}"
+        echo "  MPI:       ${MPI} → ${MPI_NAME}"
+        echo "  GPU:       ${GPU:-none}"
+        echo "  Prefix:    ${PREFIX}"
+        echo "  Suffix:    ${SUFFIX}"
 
         echo "image=${IMAGE}" >> $GITHUB_OUTPUT
         echo "container-prefix=${PREFIX}" >> $GITHUB_OUTPUT
-        echo "container-suffix=${BASE_SUFFIX}" >> $GITHUB_OUTPUT
+        echo "container-suffix=${SUFFIX}" >> $GITHUB_OUTPUT
+        echo "container-gpu-suffix=${GPU_SUFFIX}" >> $GITHUB_OUTPUT
         echo "compiler-name=${COMPILER_NAME}" >> $GITHUB_OUTPUT
         echo "compiler-map=${CMAP}" >> $GITHUB_OUTPUT
         echo "mpi-name=${MPI_NAME}" >> $GITHUB_OUTPUT
