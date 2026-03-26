@@ -21,7 +21,7 @@ outputs:
     description: 'Image prefix (everything before {compiler}-{mpi})'
     value: ${{ steps.resolve.outputs.container-prefix }}
   container-suffix:
-    description: 'Image suffix (everything after {compiler}-{mpi})'
+    description: 'Image suffix after {compiler}-{mpi} (excludes GPU; insert GPU part before this for matrix workflows)'
     value: ${{ steps.resolve.outputs.container-suffix }}
   compiler-name:
     description: 'Compiler name as it appears in the container image tag'
@@ -102,15 +102,15 @@ runs:
           GPU_PART="-${GPU}"
         fi
 
-        # Assemble prefix and suffix based on style
+        # Assemble prefix and base suffix (without GPU) based on style
         case "${STYLE}" in
           cisldev)
             PREFIX="${REGISTRY}/cisldev-x86_64-${OS}"
-            SUFFIX="${GPU_PART}:${CONTAINER_CISLDEV_TAG}"
+            BASE_SUFFIX=":${CONTAINER_CISLDEV_TAG}"
             ;;
           hpcdev)
             PREFIX="${REGISTRY}/hpcdev-x86_64:${OS}"
-            SUFFIX="${GPU_PART}-${CONTAINER_HPCDEV_VERSION}"
+            BASE_SUFFIX="-${CONTAINER_HPCDEV_VERSION}"
             ;;
           *)
             echo "::error::Unknown CONTAINER_STYLE=${STYLE}. Use 'cisldev' or 'hpcdev'."
@@ -118,7 +118,7 @@ runs:
             ;;
         esac
 
-        IMAGE="${PREFIX}-${COMPILER_NAME}-${MPI_NAME}${SUFFIX}"
+        IMAGE="${PREFIX}-${COMPILER_NAME}-${MPI_NAME}${GPU_PART}${BASE_SUFFIX}"
 
         echo "Resolved container image: ${IMAGE}"
         echo "  Style:    ${STYLE}"
@@ -128,7 +128,7 @@ runs:
 
         echo "image=${IMAGE}" >> $GITHUB_OUTPUT
         echo "container-prefix=${PREFIX}" >> $GITHUB_OUTPUT
-        echo "container-suffix=${SUFFIX}" >> $GITHUB_OUTPUT
+        echo "container-suffix=${BASE_SUFFIX}" >> $GITHUB_OUTPUT
         echo "compiler-name=${COMPILER_NAME}" >> $GITHUB_OUTPUT
         echo "compiler-map=${CMAP}" >> $GITHUB_OUTPUT
         echo "mpi-name=${MPI_NAME}" >> $GITHUB_OUTPUT

@@ -1,6 +1,6 @@
 # Subset CI: GCC compiler only
 # Quick validation that GCC builds and runs correctly.
-# Tests two MPI libraries (openmpi + mpich3) with SMIOL at 1 MPI rank.
+# Tests two MPI libraries (openmpi + mpich) with SMIOL at 1 MPI rank.
 #
 # For full matrix testing, see test-ga-nogpu.yml.
 

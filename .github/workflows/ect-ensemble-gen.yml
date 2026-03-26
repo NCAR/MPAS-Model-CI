@@ -42,9 +42,9 @@ on:
         required: false
         default: 'nvhpc'
       mpi-impl:
-        description: 'MPI implementation (mpich, openmpi, mpich3)'
+        description: 'MPI implementation (mpich, openmpi)'
         type: choice
-        options: [mpich, openmpi, mpich3]
+        options: [mpich, openmpi]
         required: false
         default: 'mpich'
 
@@ -57,7 +57,18 @@ jobs:
     outputs:
       batches: ${{ steps.compute.outputs.batches }}
       ensemble-size: ${{ steps.compute.outputs.ensemble-size }}
+      container-image: ${{ steps.container.outputs.image }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler || 'nvhpc' }}
+          mpi: ${{ inputs.mpi-impl || 'mpich' }}
+
       - name: Compute batch ranges
         id: compute
         run: |
@@ -85,13 +96,14 @@ jobs:
   # BUILD
   #===========================================================================
   build:
+    needs: prepare
     name: Build MPAS-A (${{ inputs.compiler || 'nvhpc' }}/${{ inputs.mpi-impl || 'mpich' }})
     runs-on: ubuntu-latest
     outputs:
       mpas-version: ${{ steps.version.outputs.mpas-version }}
       mpas-commit: ${{ steps.version.outputs.mpas-commit }}
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
+      image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
       - uses: actions/checkout@v4
@@ -123,7 +135,7 @@ jobs:
       - name: Build MPAS-A (double precision)
         uses: ./.github/actions/build-mpas
         with:
-          compiler: ${{ (inputs.compiler || 'nvhpc') == 'gcc' && 'gfortran' || (inputs.compiler || 'nvhpc') }}
+          compiler: ${{ inputs.compiler || 'nvhpc' }}
           precision: double
 
       - name: Upload executable
@@ -140,11 +152,11 @@ jobs:
   # See Price-Broncucia et al. (2025), Section 3.2.
   #===========================================================================
   spinup:
-    needs: build
+    needs: [prepare, build]
     name: 24h Spin-up
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
+      image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
       - uses: actions/checkout@v4
@@ -218,7 +230,7 @@ jobs:
     name: Members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ inputs.compiler || 'nvhpc' }}-${{ inputs.mpi-impl || 'mpich' }}:devel
+      image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
       - uses: actions/checkout@v4

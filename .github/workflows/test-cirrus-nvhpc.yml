@@ -19,20 +19,38 @@ on:
       - master
       - develop
 
-# Image pattern:
-#   nogpu: ncarcisl/cisldev-x86_64-almalinux9-nvhpc-{mpi}:devel
-#   cuda:  ncarcisl/cisldev-x86_64-almalinux9-nvhpc-{mpi}-cuda:devel
-
 jobs:
+  #===========================================================================
+  # CONFIG: Resolve container image parts from ci-config.env
+  #===========================================================================
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-prefix: ${{ steps.container.outputs.container-prefix }}
+      image-suffix: ${{ steps.container.outputs.container-suffix }}
+      compiler-name: ${{ steps.container.outputs.compiler-name }}
+      mpi-map: ${{ steps.container.outputs.mpi-map }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: nvhpc
+          mpi: openmpi
+
   #===========================================================================
   # BUILD: All NVHPC configurations (CUDA and NoGPU)
   #===========================================================================
   build:
+    needs: config
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
@@ -40,7 +58,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -78,13 +96,13 @@ jobs:
   # RUN: All NVHPC configurations (CUDA and NoGPU)
   #===========================================================================
   run:
-    needs: build
+    needs: [config, build]
     if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
@@ -92,7 +110,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -115,7 +133,7 @@ jobs:
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
-          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi }}
           working-dir: run-${{ matrix.mpi }}-${{ matrix.gpu }}-${{ matrix.io }}
 
       - name: Upload logs
@@ -158,14 +176,10 @@ jobs:
         with:
           logs-path: logs
           expected-configs: >-
-            logs-nvhpc-mpich3-nogpu-smiol,
-            logs-nvhpc-mpich3-nogpu-pio,
             logs-nvhpc-mpich-nogpu-smiol,
             logs-nvhpc-mpich-nogpu-pio,
             logs-nvhpc-openmpi-nogpu-smiol,
             logs-nvhpc-openmpi-nogpu-pio,
-            logs-nvhpc-mpich3-cuda-smiol,
-            logs-nvhpc-mpich3-cuda-pio,
             logs-nvhpc-mpich-cuda-smiol,
             logs-nvhpc-mpich-cuda-pio,
             logs-nvhpc-openmpi-cuda-smiol,
@@ -181,11 +195,12 @@ jobs:
   # require double precision to be resolvable in the floating-point format)
   #===========================================================================
   build-ect:
+    needs: config
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
@@ -193,7 +208,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -232,13 +247,13 @@ jobs:
   # ECT RUN: 3 perturbed ensemble members per matrix combination (120km)
   #===========================================================================
   ect-run:
-    needs: build-ect
+    needs: [config, build-ect]
     if: always() && needs.build-ect.result != 'cancelled'
     strategy:
       fail-fast: false
       max-parallel: 4
       matrix:
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 
@@ -246,7 +261,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -318,7 +333,7 @@ jobs:
           member-start: '0'
           member-end: '2'
           num-ranks: '4'
-          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi }}
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history files
@@ -338,7 +353,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         gpu: [nogpu, cuda]
         io: [smiol, pio]
 

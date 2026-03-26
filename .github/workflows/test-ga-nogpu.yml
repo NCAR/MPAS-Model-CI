@@ -18,25 +18,44 @@ on:
       - master
       - develop
 
-# Container image pattern: ncarcisl/cisldev-x86_64-almalinux9-{compiler}-{mpi}:devel
-# MPI flags: openmpi needs --allow-run-as-root --oversubscribe (handled by run-mpas)
-
 jobs:
+  #===========================================================================
+  # CONFIG: Resolve container image parts from ci-config.env
+  #===========================================================================
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-prefix: ${{ steps.container.outputs.container-prefix }}
+      image-suffix: ${{ steps.container.outputs.container-suffix }}
+      compiler-map: ${{ steps.container.outputs.compiler-map }}
+      mpi-map: ${{ steps.container.outputs.mpi-map }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: openmpi
+
   #===========================================================================
   # BUILD: All compiler/MPI combinations (nogpu only for GitHub runners)
   #===========================================================================
   build:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         io: [smiol, pio]
 
     name: Build (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ fromJSON(needs.config.outputs.compiler-map)[matrix.compiler] }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -73,20 +92,20 @@ jobs:
   # RUN: NoGPU configurations, 1 and 4 MPI ranks
   #===========================================================================
   run:
-    needs: build
+    needs: [config, build]
     if: always() && needs.build.result != 'cancelled'
     strategy:
       fail-fast: false
       matrix:
         num-procs: [1, 4]
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         io: [smiol, pio]
 
     name: Run ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ fromJSON(needs.config.outputs.compiler-map)[matrix.compiler] }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -104,7 +123,7 @@ jobs:
         with:
           executable: ./atmosphere_model
           num-procs: ${{ matrix.num-procs }}
-          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi }}
           working-dir: run-${{ matrix.num-procs }}proc-${{ matrix.compiler }}-${{ matrix.mpi }}-${{ matrix.io }}
 
       - name: Upload logs
@@ -144,7 +163,7 @@ jobs:
         shell: bash
         run: |
           COMPILERS=(gcc nvhpc oneapi)
-          MPIS=(mpich3 mpich openmpi)
+          MPIS=(mpich openmpi)
           IOS=(smiol pio)
 
           REF_LIST=""
@@ -183,20 +202,20 @@ jobs:
   # ECT RUN: 3 perturbed ensemble members per matrix combination (120km)
   #===========================================================================
   ect-run:
-    needs: build
+    needs: [config, build]
     if: always() && needs.build.result != 'cancelled'
     strategy:
       fail-fast: false
       matrix:
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         io: [smiol, pio]
         num-procs: [1, 4]
 
     name: ECT ${{ matrix.num-procs }}proc (${{ matrix.compiler }}, ${{ matrix.mpi }}, ${{ matrix.io }})
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-${{ matrix.compiler }}-${{ matrix.mpi }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ fromJSON(needs.config.outputs.compiler-map)[matrix.compiler] }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -244,7 +263,7 @@ jobs:
           member-start: '0'
           member-end: '2'
           num-ranks: ${{ matrix.num-procs }}
-          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi }}
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history files
@@ -265,7 +284,7 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [gcc, nvhpc, oneapi]
-        mpi: [mpich3, mpich, openmpi]
+        mpi: [mpich, openmpi]
         io: [smiol, pio]
         num-procs: [1, 4]
 

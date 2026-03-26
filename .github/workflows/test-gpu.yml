@@ -14,7 +14,26 @@ on:
   workflow_dispatch:
 
 jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-prefix: ${{ steps.container.outputs.container-prefix }}
+      image-suffix: ${{ steps.container.outputs.container-suffix }}
+      compiler-name: ${{ steps.container.outputs.compiler-name }}
+      mpi-name: ${{ steps.container.outputs.mpi-name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: nvhpc
+          mpi: mpich
+
   build:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +43,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ needs.config.outputs.mpi-name }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +65,7 @@ jobs:
           retention-days: 1
 
   run:
-    needs: build
+    needs: [config, build]
     if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
     strategy:
       fail-fast: false
@@ -57,7 +76,7 @@ jobs:
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-mpich${{ matrix.gpu == 'cuda' && '-cuda' || '' }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ needs.config.outputs.mpi-name }}${{ matrix.gpu == 'cuda' && '-cuda' || '' }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4

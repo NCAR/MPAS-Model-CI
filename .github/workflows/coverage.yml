@@ -19,11 +19,27 @@ on:
     branches: [master, develop]
 
 jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: mpich
+
   coverage:
     name: Build, Run, and Generate Coverage
+    needs: config
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-mpich3:devel
+      image: ${{ needs.config.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4

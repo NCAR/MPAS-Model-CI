@@ -1,6 +1,6 @@
 # Subset CI: NVHPC compiler only (no GPU)
 # Quick validation that NVHPC builds and runs on GitHub Actions runners.
-# Tests two MPI libraries (mpich3 + openmpi) with SMIOL at 1 MPI rank.
+# Tests two MPI libraries (openmpi + mpich) with SMIOL at 1 MPI rank.
 #
 # For GPU testing, see test-cirrus-nvhpc.yml.
 # For full matrix testing, see test-ga-nogpu.yml.
@@ -15,16 +15,35 @@ on:
     branches: [master, develop]
 
 jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-prefix: ${{ steps.container.outputs.container-prefix }}
+      image-suffix: ${{ steps.container.outputs.container-suffix }}
+      compiler-name: ${{ steps.container.outputs.compiler-name }}
+      mpi-map: ${{ steps.container.outputs.mpi-map }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: nvhpc
+          mpi: openmpi
+
   build:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        mpi: [mpich3, openmpi]
+        mpi: [openmpi, mpich]
 
     name: Build (nvhpc, ${{ matrix.mpi }}, smiol)
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -45,17 +64,17 @@ jobs:
           retention-days: 1
 
   run:
-    needs: build
+    needs: [config, build]
     if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
     strategy:
       fail-fast: false
       matrix:
-        mpi: [mpich3, openmpi]
+        mpi: [openmpi, mpich]
 
     name: Run 1proc (nvhpc, ${{ matrix.mpi }}, smiol)
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-nvhpc-${{ matrix.mpi }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +89,7 @@ jobs:
         with:
           executable: ./atmosphere_model
           num-procs: '1'
-          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi }}
           working-dir: run-nvhpc-${{ matrix.mpi }}-smiol
 
       - name: Upload logs
@@ -110,8 +129,8 @@ jobs:
           reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
           allow-missing: 'false'
           expected-configs: >-
-            logs-1proc-nvhpc-mpich3-nogpu-smiol,
-            logs-1proc-nvhpc-openmpi-nogpu-smiol
+            logs-1proc-nvhpc-openmpi-nogpu-smiol,
+            logs-1proc-nvhpc-mpich-nogpu-smiol
 
   cleanup:
     needs: [run, validate]
