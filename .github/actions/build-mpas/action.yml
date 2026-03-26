@@ -90,35 +90,28 @@ runs:
         echo "  OPENACC: ${OPENACC:-false}"
         echo "  PRECISION: ${{ inputs.precision }}"
         
-        # Map COMPILER_FAMILY to make target
-        case "${COMPILER_FAMILY}" in
-          aocc|clang)  MAKE_TARGET="llvm" ;;
-          gcc)         MAKE_TARGET="gfortran" ;;
-          oneapi)      MAKE_TARGET="intel" ;;
-          nvhpc)       MAKE_TARGET="nvhpc" ;;
-          *)
-            echo "::error::Unrecognized COMPILER_FAMILY=${COMPILER_FAMILY}"
-            exit 1
-            ;;
-        esac
+        # Settings from .github/ci-config.env — edit that file to change targets/workarounds
+        CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
+        if [ -f "${CI_CONFIG}" ]; then
+          source "${CI_CONFIG}"
+        fi
 
-        # NVHPC defaults to -tp=native, generating code for the build host's
-        # CPU. In CI the build and run happen on different runners, so the
-        # binary may hit illegal instructions on a runner with fewer CPU
-        # features. Prepend -tp=px (portable x86-64) to ensure compatibility.
+        # Map COMPILER_FAMILY to make target via ci-config.env lookup
+        VARNAME="MAKE_TARGET_${COMPILER_FAMILY}"
+        MAKE_TARGET="${!VARNAME}"
+        if [ -z "${MAKE_TARGET}" ]; then
+          echo "::error::No make target for COMPILER_FAMILY=${COMPILER_FAMILY}. Add MAKE_TARGET_${COMPILER_FAMILY}= to .github/ci-config.env"
+          exit 1
+        fi
+
         EXTRA_MAKE_FLAGS=""
         if [ "${COMPILER_FAMILY}" = "nvhpc" ]; then
-          sed -i '/^nvhpc:/,/^[a-z]/ s/"FFLAGS_OPT = /"FFLAGS_OPT = -tp=px /' Makefile
-          sed -i '/^nvhpc:/,/^[a-z]/ s/"CFLAGS_OPT = /"CFLAGS_OPT = -tp=px /' Makefile
-          sed -i '/^nvhpc:/,/^[a-z]/ s/"CXXFLAGS_OPT = /"CXXFLAGS_OPT = -tp=px /' Makefile
-          sed -i '/^nvhpc:/,/^[a-z]/ s/"LDFLAGS_OPT = /"LDFLAGS_OPT = -tp=px /' Makefile
-
-          # Disable MPI F08 bindings for NVHPC. MPICH4 enables F08 by default,
-          # but NVHPC versions before 2024 have broken CFI support, causing
-          # "CFI_is_contiguous: unsupported array rank" crashes at runtime.
-          # This can be removed when the container upgrades to NVHPC 24.x+.
-          # See: https://github.com/pmodels/mpich/issues/6505
-          EXTRA_MAKE_FLAGS="MPAS_MPI_F08=0"
+          ARCH="${NVHPC_TARGET_ARCH:--tp=px}"
+          sed -i "/^nvhpc:/,/^[a-z]/ s/\"FFLAGS_OPT = /\"FFLAGS_OPT = ${ARCH} /" Makefile
+          sed -i "/^nvhpc:/,/^[a-z]/ s/\"CFLAGS_OPT = /\"CFLAGS_OPT = ${ARCH} /" Makefile
+          sed -i "/^nvhpc:/,/^[a-z]/ s/\"CXXFLAGS_OPT = /\"CXXFLAGS_OPT = ${ARCH} /" Makefile
+          sed -i "/^nvhpc:/,/^[a-z]/ s/\"LDFLAGS_OPT = /\"LDFLAGS_OPT = ${ARCH} /" Makefile
+          EXTRA_MAKE_FLAGS="${NVHPC_EXTRA_MAKE_FLAGS}"
         fi
 
         echo "  Make target: ${MAKE_TARGET}"
