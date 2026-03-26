@@ -14,16 +14,35 @@ on:
     branches: [master, develop]
 
 jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-prefix: ${{ steps.container.outputs.container-prefix }}
+      image-suffix: ${{ steps.container.outputs.container-suffix }}
+      compiler-name: ${{ steps.container.outputs.compiler-name }}
+      mpi-map: ${{ steps.container.outputs.mpi-map }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: openmpi
+
   build:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        mpi: [openmpi, mpich3]
+        mpi: [openmpi, mpich]
 
     name: Build (gcc, ${{ matrix.mpi }}, smiol)
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-${{ matrix.mpi }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -44,17 +63,17 @@ jobs:
           retention-days: 1
 
   run:
-    needs: build
+    needs: [config, build]
     if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
     strategy:
       fail-fast: false
       matrix:
-        mpi: [openmpi, mpich3]
+        mpi: [openmpi, mpich]
 
     name: Run 1proc (gcc, ${{ matrix.mpi }}, smiol)
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-${{ matrix.mpi }}:devel
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
 
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +88,7 @@ jobs:
         with:
           executable: ./atmosphere_model
           num-procs: '1'
-          mpi-impl: ${{ matrix.mpi != 'openmpi' && 'mpich' || 'openmpi' }}
+          mpi-impl: ${{ matrix.mpi }}
           working-dir: run-gcc-${{ matrix.mpi }}-smiol
 
       - name: Upload logs
@@ -110,7 +129,7 @@ jobs:
           allow-missing: 'false'
           expected-configs: >-
             logs-1proc-gcc-openmpi-nogpu-smiol,
-            logs-1proc-gcc-mpich3-nogpu-smiol
+            logs-1proc-gcc-mpich-nogpu-smiol
 
   cleanup:
     needs: [run, validate]

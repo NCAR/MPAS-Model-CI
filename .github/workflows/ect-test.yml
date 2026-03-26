@@ -26,13 +26,32 @@ on:
 
 jobs:
   #===========================================================================
+  # CONFIG: Resolve container image from ci-config.env
+  #===========================================================================
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: openmpi
+
+  #===========================================================================
   # BUILD
   #===========================================================================
   build:
+    needs: config
     name: Build MPAS-A
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: ${{ needs.config.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +74,7 @@ jobs:
       - name: Build MPAS-A (double precision)
         uses: ./.github/actions/build-mpas
         with:
-          compiler: gfortran
+          compiler: gcc
           precision: double
 
       - name: Upload executable
@@ -69,7 +88,7 @@ jobs:
   # RUN: 3 perturbed ensemble members
   #===========================================================================
   run:
-    needs: build
+    needs: [config, build]
     strategy:
       fail-fast: false
       matrix:
@@ -78,7 +97,7 @@ jobs:
     name: ECT member ${{ matrix.member }}
     runs-on: ubuntu-latest
     container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-gcc-openmpi:devel
+      image: ${{ needs.config.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
