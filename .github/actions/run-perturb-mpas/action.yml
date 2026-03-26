@@ -88,12 +88,18 @@ runs:
         RESOLUTION="${{ inputs.resolution }}"
         RESTART_FILE="${{ inputs.restart-file }}"
 
+        # Settings from .github/ci-config.env — edit that file to change MPI flags
+        CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
+        if [ -f "${CI_CONFIG}" ]; then
+          source "${CI_CONFIG}"
+        fi
+
         MPI_FLAGS=""
         if [ "${MPI_IMPL}" = "openmpi" ]; then
-          MPI_FLAGS="--allow-run-as-root --oversubscribe"
+          MPI_FLAGS="${OPENMPI_RUN_FLAGS}"
         elif [ "${MPI_IMPL}" = "mpich" ]; then
-          export MPICH_GPU_SUPPORT_ENABLED=0
-          export MPIR_CVAR_ENABLE_GPU=0
+          export MPICH_GPU_SUPPORT_ENABLED="${MPICH_RUN_ENV_MPICH_GPU_SUPPORT_ENABLED:-0}"
+          export MPIR_CVAR_ENABLE_GPU="${MPICH_RUN_ENV_MPIR_CVAR_ENABLE_GPU:-0}"
         fi
 
         mkdir -p "${OUTDIR}"
