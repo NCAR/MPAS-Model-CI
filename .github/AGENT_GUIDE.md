@@ -4,7 +4,7 @@
 
 MPAS (Model for Prediction Across Scales) is a community atmospheric model used for weather forecasting and climate research. Scientific validity is non-negotiable — every CI change must preserve the correctness of model results and not hide failures.
 
-MPAS has consistent coding conventions maintained over many years. Follow existing style. See `.github/copilot-instructions.md` for MPAS-specific Fortran standards.
+MPAS has consistent coding conventions maintained over many years. Follow existing style.
 
 ## Repository Layout
 
