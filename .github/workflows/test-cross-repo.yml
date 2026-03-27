@@ -1,0 +1,48 @@
+# Cross-repo testing: run CI against an external MPAS source repo.
+# Dispatch-only — does not affect badge status on master.
+
+name: "Cross-Repo Test"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpas-repository:
+        description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model)'
+        required: true
+      mpas-ref:
+        description: 'Git ref (branch, tag, or SHA)'
+        required: true
+      compilers:
+        description: 'Compilers to test (comma-separated: gcc,nvhpc,oneapi)'
+        required: false
+        default: 'gcc,nvhpc,oneapi'
+      mpi:
+        description: 'MPI implementation'
+        required: false
+        default: 'mpich'
+      include-gpu:
+        description: 'Include GPU (CUDA) test'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  cpu-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: ${{ fromJSON(format('["{0}"]', replace(inputs.compilers, ',', '","'))) }}
+    uses: ./.github/workflows/_test-compiler.yml
+    with:
+      compiler: ${{ matrix.compiler }}
+      mpi: ${{ inputs.mpi }}
+      mpas-repository: ${{ inputs.mpas-repository }}
+      mpas-ref: ${{ inputs.mpas-ref }}
+
+  gpu:
+    if: ${{ inputs.include-gpu }}
+    uses: ./.github/workflows/_test-gpu.yml
+    with:
+      mpi: ${{ inputs.mpi }}
+      mpas-repository: ${{ inputs.mpas-repository }}
+      mpas-ref: ${{ inputs.mpas-ref }}
