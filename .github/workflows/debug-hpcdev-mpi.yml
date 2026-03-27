@@ -1,0 +1,141 @@
+name: Debug hpcdev MPI
+on: workflow_dispatch
+
+jobs:
+  openmpi:
+    name: hpcdev oneapi-openmpi
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/ncarcisl/hpcdev-x86_64:almalinux9-oneapi-openmpi-26.02
+    steps:
+      - name: MPI info
+        shell: bash
+        run: |
+          echo "=== /container contents ==="
+          ls -la /container/
+          echo
+          echo "=== mpifort --version ==="
+          mpifort --version 2>&1 || true
+          echo
+          echo "=== mpifort -show ==="
+          mpifort -show 2>&1 || true
+          echo
+          echo "=== ompi_info ==="
+          ompi_info 2>&1 | head -30 || true
+          echo
+          echo "=== MPI .mod files ==="
+          find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
+          echo
+          echo "=== MPI lib dirs ==="
+          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
+          echo
+          echo "=== rpm mpi packages ==="
+          rpm -qa 2>/dev/null | grep -i mpi | sort || true
+          echo
+          echo "=== config_env.sh ==="
+          cat /container/config_env.sh 2>/dev/null || echo "not found"
+          echo
+          echo "=== env vars with MPI ==="
+          env | grep -i mpi | sort || true
+
+  mpich:
+    name: hpcdev oneapi-mpich
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/ncarcisl/hpcdev-x86_64:almalinux9-oneapi-mpich-26.02
+    steps:
+      - name: MPI info
+        shell: bash
+        run: |
+          echo "=== /container contents ==="
+          ls -la /container/
+          echo
+          echo "=== mpifort --version ==="
+          mpifort --version 2>&1 || true
+          echo
+          echo "=== mpifort -show ==="
+          mpifort -show 2>&1 || true
+          echo
+          echo "=== MPI .mod files ==="
+          find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
+          echo
+          echo "=== MPI lib dirs ==="
+          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
+          echo
+          echo "=== rpm mpi packages ==="
+          rpm -qa 2>/dev/null | grep -i mpi | sort || true
+          echo
+          echo "=== config_env.sh ==="
+          cat /container/config_env.sh 2>/dev/null || echo "not found"
+          echo
+          echo "=== env vars with MPI ==="
+          env | grep -i mpi | sort || true
+
+  cisldev-openmpi:
+    name: cisldev oneapi-openmpi (reference)
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-oneapi-openmpi:devel
+    steps:
+      - name: MPI info
+        shell: bash
+        run: |
+          echo "=== /container contents ==="
+          ls -la /container/
+          echo
+          echo "=== mpifort --version ==="
+          mpifort --version 2>&1 || true
+          echo
+          echo "=== mpifort -show ==="
+          mpifort -show 2>&1 || true
+          echo
+          echo "=== ompi_info ==="
+          ompi_info 2>&1 | head -30 || true
+          echo
+          echo "=== MPI .mod files ==="
+          find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
+          echo
+          echo "=== MPI lib dirs ==="
+          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
+          echo
+          echo "=== rpm mpi packages ==="
+          rpm -qa 2>/dev/null | grep -i mpi | sort || true
+          echo
+          echo "=== config_env.sh ==="
+          cat /container/config_env.sh 2>/dev/null || echo "not found"
+          echo
+          echo "=== env vars with MPI ==="
+          env | grep -i mpi | sort || true
+
+  cisldev-mpich3:
+    name: cisldev oneapi-mpich3 (reference)
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-oneapi-mpich3:devel
+    steps:
+      - name: MPI info
+        shell: bash
+        run: |
+          echo "=== /container contents ==="
+          ls -la /container/
+          echo
+          echo "=== mpifort --version ==="
+          mpifort --version 2>&1 || true
+          echo
+          echo "=== mpifort -show ==="
+          mpifort -show 2>&1 || true
+          echo
+          echo "=== MPI .mod files ==="
+          find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
+          echo
+          echo "=== MPI lib dirs ==="
+          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
+          echo
+          echo "=== rpm mpi packages ==="
+          rpm -qa 2>/dev/null | grep -i mpi | sort || true
+          echo
+          echo "=== config_env.sh ==="
+          cat /container/config_env.sh 2>/dev/null || echo "not found"
+          echo
+          echo "=== env vars with MPI ==="
+          env | grep -i mpi | sort || true
