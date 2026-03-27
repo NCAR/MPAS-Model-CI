@@ -61,8 +61,18 @@ runs:
     - name: Install Python dependencies
       shell: bash
       run: |
+        # Try pip first; fall back to conda for containers where pip
+        # can't build netCDF4 from source (missing HDF5 in pkg-config, old Python)
         python3 -m ensurepip --upgrade 2>/dev/null || true
-        python3 -m pip install netCDF4 numpy
+        if python3 -m pip install netCDF4 numpy 2>/dev/null; then
+          echo "Installed via pip"
+        elif command -v conda &>/dev/null; then
+          echo "pip failed, installing via conda"
+          conda install -y -q netCDF4 numpy
+        else
+          echo "::error::Could not install netCDF4 via pip or conda"
+          exit 1
+        fi
 
     - name: Run perturbed members
       id: run-members
