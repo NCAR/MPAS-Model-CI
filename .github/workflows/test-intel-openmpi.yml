@@ -6,7 +6,7 @@ name: "Intel+OpenMPI (CPU)"
 on:
   workflow_dispatch:
   push:
-    branches: [master, develop, feature-ci-cleanup]
+    branches: [master, develop]
   pull_request:
     branches: [master, develop]
 
