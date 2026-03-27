@@ -61,12 +61,16 @@ runs:
         comp_var="CONTAINER_COMPILER_${COMPILER}"
         COMPILER_NAME="${!comp_var:-$COMPILER}"
 
-        # Resolve MPI name (fallback to raw value if no mapping)
+        # Resolve MPI name: compiler-specific mapping takes priority, then generic, then raw value
+        mpi_compiler_var="CONTAINER_MPI_${COMPILER}_${MPI}"
         mpi_var="CONTAINER_MPI_${MPI}"
-        MPI_NAME="${!mpi_var:-$MPI}"
+        MPI_NAME="${!mpi_compiler_var:-${!mpi_var:-$MPI}}"
 
-        # Pick template based on GPU input
-        if [ -n "${GPU}" ] && [ -n "${CONTAINER_IMAGE_GPU}" ]; then
+        # Pick template: compiler-specific override > GPU template > default
+        compiler_image_var="CONTAINER_IMAGE_${COMPILER}"
+        if [ -n "${!compiler_image_var}" ] && [ -z "${GPU}" ]; then
+          TEMPLATE="${!compiler_image_var}"
+        elif [ -n "${GPU}" ] && [ -n "${CONTAINER_IMAGE_GPU}" ]; then
           TEMPLATE="${CONTAINER_IMAGE_GPU}"
         else
           TEMPLATE="${CONTAINER_IMAGE}"
@@ -77,9 +81,9 @@ runs:
         IMAGE="${IMAGE//\{mpi\}/$MPI_NAME}"
 
         # Extract prefix (everything before -{compiler}) and suffix
-        # (everything after {mpi}) from the non-GPU template for matrix use
-        PREFIX=$(echo "${CONTAINER_IMAGE}" | sed 's/-{compiler}.*//')
-        SUFFIX=$(echo "${CONTAINER_IMAGE}" | sed 's/.*{mpi}//')
+        # (everything after {mpi}) from the resolved template for matrix use
+        PREFIX=$(echo "${TEMPLATE}" | sed 's/-{compiler}.*//')
+        SUFFIX=$(echo "${TEMPLATE}" | sed 's/.*{mpi}//')
         GPU_SUFFIX=$(echo "${CONTAINER_IMAGE_GPU}" | sed 's/.*{mpi}//')
 
         # Build compiler map JSON
@@ -92,11 +96,12 @@ runs:
         done
         CMAP="${CMAP}}"
 
-        # Build MPI map JSON
+        # Build MPI map JSON (compiler-specific mappings take priority)
         MMAP="{"
         for impl in openmpi mpich; do
+          mpi_compiler_var="CONTAINER_MPI_${COMPILER}_${impl}"
           mpi_var="CONTAINER_MPI_${impl}"
-          NAME="${!mpi_var:-$impl}"
+          NAME="${!mpi_compiler_var:-${!mpi_var:-$impl}}"
           [ "${MMAP}" != "{" ] && MMAP="${MMAP},"
           MMAP="${MMAP}\"${impl}\":\"${NAME}\""
         done
