@@ -6,7 +6,7 @@ name: "NVHPC+OpenMPI (CPU)"
 on:
   workflow_dispatch:
   push:
-    branches: [master, develop]
+    branches: [master, develop, feature-ci-cleanup]
   pull_request:
     branches: [master, develop]
 
