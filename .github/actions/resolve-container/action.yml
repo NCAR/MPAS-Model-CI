@@ -44,11 +44,13 @@ runs:
         mpi_var="CONTAINER_MPI_${MPI}"
         MPI_NAME="${!mpi_var:-$MPI}"
 
-        # Pick template based on GPU input
-        if [ -n "${GPU}" ] && [ -n "${CONTAINER_IMAGE_GPU}" ]; then
-          TEMPLATE="${CONTAINER_IMAGE_GPU}"
+        # Pick template: GPU vs CPU, then check for per-compiler override
+        if [ -n "${GPU}" ]; then
+          gpu_override="CONTAINER_IMAGE_GPU_${COMPILER}"
+          TEMPLATE="${!gpu_override:-$CONTAINER_IMAGE_GPU}"
         else
-          TEMPLATE="${CONTAINER_IMAGE}"
+          cpu_override="CONTAINER_IMAGE_${COMPILER}"
+          TEMPLATE="${!cpu_override:-$CONTAINER_IMAGE}"
         fi
 
         # Substitute placeholders
