@@ -100,6 +100,10 @@ runs:
           EXTRA_MAKE_FLAGS="${NVHPC_EXTRA_MAKE_FLAGS}"
         elif [ "${COMPILER_FAMILY}" = "oneapi" ]; then
           EXTRA_MAKE_FLAGS="${ONEAPI_EXTRA_MAKE_FLAGS}"
+          if [ "${ONEAPI_FPP_WORKAROUND:-}" = "true" ]; then
+            echo "  Applying IFX fpp workaround: DMPAR_DEBUG_WRITE -> variadic macro"
+            sed -i 's/#define DMPAR_DEBUG_WRITE(M) !call mpas_log_write( M )/#define DMPAR_DEBUG_WRITE(...) !call mpas_log_write( __VA_ARGS__ )/' src/framework/mpas_dmpar.F
+          fi
         fi
 
         echo "  Make target: ${MAKE_TARGET}"
