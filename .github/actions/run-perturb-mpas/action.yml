@@ -64,20 +64,26 @@ runs:
       run: |
         source /container/config_env.sh
 
-        # Ensure netCDF4 and numpy are available.
-        # Strategy: use what the container already provides, fall back to
-        # pip, then conda.  Everything runs in one shell so PATH persists.
-        if python3 -c "import netCDF4, numpy" 2>/dev/null; then
-          echo "netCDF4/numpy already available"
-        elif python3 -m pip install --quiet netCDF4 numpy 2>/dev/null; then
-          echo "Installed netCDF4/numpy via pip"
-        elif command -v conda &>/dev/null; then
-          echo "pip failed — installing netCDF4/numpy via conda"
-          conda install -y -q netCDF4 numpy
-        else
-          echo "::error::Could not install netCDF4 (no pip, no conda)"
-          exit 1
+        # Activate conda base env (if present) so python3 resolves to
+        # miniforge's Python, which may already ship netCDF4/numpy.
+        if command -v conda &>/dev/null; then
+          eval "$(conda shell.bash hook)" 2>/dev/null
+          conda activate base 2>/dev/null || true
         fi
+
+        # Ensure netCDF4 and numpy are importable.
+        if ! python3 -c "import netCDF4, numpy" 2>/dev/null; then
+          if python3 -m pip install --quiet netCDF4 numpy 2>/dev/null; then
+            echo "Installed netCDF4/numpy via pip"
+          elif command -v conda &>/dev/null; then
+            conda install -y -q netCDF4 numpy
+            echo "Installed netCDF4/numpy via conda"
+          else
+            echo "::error::Could not install netCDF4 (no pip, no conda)"
+            exit 1
+          fi
+        fi
+        echo "python3: $(which python3) — $(python3 --version)"
 
         # Workaround: some container images (e.g. mpich-cuda) omit LD_LIBRARY_PATH
         # from config_env.sh, preventing the NVHPC runtime from finding libcuda.so
