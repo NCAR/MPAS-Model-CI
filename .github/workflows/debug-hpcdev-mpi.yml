@@ -6,140 +6,112 @@ on:
       - '.github/workflows/debug-hpcdev-mpi.yml'
 
 jobs:
-  openmpi:
+  hpcdev:
     name: hpcdev oneapi-openmpi
     runs-on: ubuntu-latest
     container:
       image: docker.io/ncarcisl/hpcdev-x86_64:almalinux9-oneapi-openmpi-26.02
     steps:
-      - name: MPI info
+      - name: Compiler and preprocessor info
         shell: bash
         run: |
-          echo "=== /container contents ==="
-          ls -la /container/
+          set +e
+          source /container/config_env.sh 2>/dev/null
+          echo "=== Intel compiler version ==="
+          ifx --version 2>&1 || ifort --version 2>&1 || echo "neither found"
           echo
-          echo "=== mpifort --version ==="
-          mpifort --version 2>&1 || true
+          echo "=== which ifx/ifort ==="
+          which ifx 2>&1; which ifort 2>&1
           echo
           echo "=== mpifort -show ==="
           mpifort -show 2>&1 || true
           echo
-          echo "=== ompi_info ==="
-          ompi_info 2>&1 | head -30 || true
-          echo
-          echo "=== MPI .mod files ==="
-          find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
-          echo
-          echo "=== MPI lib dirs ==="
-          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
-          echo
-          echo "=== rpm mpi packages ==="
-          rpm -qa 2>/dev/null | grep -i mpi | sort || true
-          echo
-          echo "=== config_env.sh ==="
-          cat /container/config_env.sh 2>/dev/null || echo "not found"
-          echo
-          echo "=== env vars with MPI ==="
-          env | grep -i mpi | sort || true
-
-  mpich:
-    name: hpcdev oneapi-mpich
-    runs-on: ubuntu-latest
-    container:
-      image: docker.io/ncarcisl/hpcdev-x86_64:almalinux9-oneapi-mpich-26.02
-    steps:
-      - name: MPI info
-        shell: bash
-        run: |
-          echo "=== /container contents ==="
-          ls -la /container/
-          echo
           echo "=== mpifort --version ==="
           mpifort --version 2>&1 || true
           echo
-          echo "=== mpifort -show ==="
-          mpifort -show 2>&1 || true
-          echo
           echo "=== MPI .mod files ==="
           find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
           echo
-          echo "=== MPI lib dirs ==="
-          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
+          echo "=== Preprocessor COMMA macro test ==="
+          cat > /tmp/test_comma.F90 << 'TESTEOF'
+#define COMMA ,
+#define DEBUG_WRITE(M) !call foo( M )
+program test
+  implicit none
+  integer :: n
+  n = 1
+  DEBUG_WRITE('hello' COMMA n)
+  print *, 'OK'
+end program test
+TESTEOF
+          echo "--- ifx (default) ---"
+          ifx -free -o /tmp/test1 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
-          echo "=== rpm mpi packages ==="
-          rpm -qa 2>/dev/null | grep -i mpi | sort || true
+          echo "--- ifx -fpp ---"
+          ifx -fpp -free -o /tmp/test2 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
+          echo
+          echo "--- ifx -no-fpp ---"
+          ifx -no-fpp -free -o /tmp/test3 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
+          echo
+          echo "--- ifx with cpp -traditional-cpp piped ---"
+          cpp -traditional-cpp -P /tmp/test_comma.F90 > /tmp/test_cpp.f90 2>&1
+          cat /tmp/test_cpp.f90
+          ifx -free -o /tmp/test4 /tmp/test_cpp.f90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
           echo "=== config_env.sh ==="
           cat /container/config_env.sh 2>/dev/null || echo "not found"
-          echo
-          echo "=== env vars with MPI ==="
-          env | grep -i mpi | sort || true
 
-  cisldev-openmpi:
+  cisldev:
     name: cisldev oneapi-openmpi (reference)
     runs-on: ubuntu-latest
     container:
       image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-oneapi-openmpi:devel
     steps:
-      - name: MPI info
+      - name: Compiler and preprocessor info
         shell: bash
         run: |
-          echo "=== /container contents ==="
-          ls -la /container/
+          set +e
+          source /container/config_env.sh 2>/dev/null
+          echo "=== Intel compiler version ==="
+          ifx --version 2>&1 || ifort --version 2>&1 || echo "neither found"
           echo
-          echo "=== mpifort --version ==="
-          mpifort --version 2>&1 || true
+          echo "=== which ifx/ifort ==="
+          which ifx 2>&1; which ifort 2>&1
           echo
           echo "=== mpifort -show ==="
           mpifort -show 2>&1 || true
           echo
-          echo "=== ompi_info ==="
-          ompi_info 2>&1 | head -30 || true
-          echo
-          echo "=== MPI .mod files ==="
-          find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
-          echo
-          echo "=== MPI lib dirs ==="
-          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
-          echo
-          echo "=== rpm mpi packages ==="
-          rpm -qa 2>/dev/null | grep -i mpi | sort || true
-          echo
-          echo "=== config_env.sh ==="
-          cat /container/config_env.sh 2>/dev/null || echo "not found"
-          echo
-          echo "=== env vars with MPI ==="
-          env | grep -i mpi | sort || true
-
-  cisldev-mpich3:
-    name: cisldev oneapi-mpich3 (reference)
-    runs-on: ubuntu-latest
-    container:
-      image: docker.io/ncarcisl/cisldev-x86_64-almalinux9-oneapi-mpich3:devel
-    steps:
-      - name: MPI info
-        shell: bash
-        run: |
-          echo "=== /container contents ==="
-          ls -la /container/
-          echo
           echo "=== mpifort --version ==="
           mpifort --version 2>&1 || true
           echo
-          echo "=== mpifort -show ==="
-          mpifort -show 2>&1 || true
-          echo
           echo "=== MPI .mod files ==="
           find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
           echo
-          echo "=== MPI lib dirs ==="
-          find /container -type d -name lib 2>/dev/null | while read d; do echo "--- $d ---"; ls "$d"/libmpi* 2>/dev/null; done
+          echo "=== Preprocessor COMMA macro test ==="
+          cat > /tmp/test_comma.F90 << 'TESTEOF'
+#define COMMA ,
+#define DEBUG_WRITE(M) !call foo( M )
+program test
+  implicit none
+  integer :: n
+  n = 1
+  DEBUG_WRITE('hello' COMMA n)
+  print *, 'OK'
+end program test
+TESTEOF
+          echo "--- ifx (default) ---"
+          ifx -free -o /tmp/test1 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
-          echo "=== rpm mpi packages ==="
-          rpm -qa 2>/dev/null | grep -i mpi | sort || true
+          echo "--- ifx -fpp ---"
+          ifx -fpp -free -o /tmp/test2 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
+          echo
+          echo "--- ifx -no-fpp ---"
+          ifx -no-fpp -free -o /tmp/test3 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
+          echo
+          echo "--- ifx with cpp -traditional-cpp piped ---"
+          cpp -traditional-cpp -P /tmp/test_comma.F90 > /tmp/test_cpp.f90 2>&1
+          cat /tmp/test_cpp.f90
+          ifx -free -o /tmp/test4 /tmp/test_cpp.f90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
           echo "=== config_env.sh ==="
           cat /container/config_env.sh 2>/dev/null || echo "not found"
-          echo
-          echo "=== env vars with MPI ==="
-          env | grep -i mpi | sort || true
