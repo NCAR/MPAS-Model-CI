@@ -3,7 +3,7 @@
 # For GPU testing, see test-cirrus-nvhpc.yml.
 # For full matrix testing, see test-ga-nogpu.yml.
 
-name: "NVHPC (subset)"
+name: "NVHPC (CPU)"
 
 on:
   workflow_dispatch:

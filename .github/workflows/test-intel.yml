@@ -2,7 +2,7 @@
 # Quick validation that Intel/OneAPI builds and runs correctly.
 # For full matrix testing, see test-ga-nogpu.yml.
 
-name: "Intel (subset)"
+name: "Intel (CPU)"
 
 on:
   workflow_dispatch:

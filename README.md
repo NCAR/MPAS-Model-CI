@@ -5,10 +5,10 @@ MPAS-v8.3.1
 
 | Test | Status |
 |------|--------|
-| GCC (subset) | [![GCC](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc.yml) |
-| NVHPC (subset) | [![NVHPC](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml) |
-| Intel (subset) | [![Intel](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml) |
-| GPU (subset) | [![GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml) |
+| GCC (CPU) | [![GCC](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc.yml) |
+| NVHPC (CPU) | [![NVHPC](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml) |
+| Intel (CPU) | [![Intel](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml) |
+| NVHPC (GPU) | [![GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml) |
 | Coverage | [![Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) |
 
 The Model for Prediction Across Scales (MPAS) is a collaborative project for

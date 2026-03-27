@@ -8,7 +8,7 @@
 #
 # For full NVHPC GPU matrix, see test-cirrus-nvhpc.yml.
 
-name: "GPU (subset)"
+name: "NVHPC (GPU)"
 
 on:
   workflow_dispatch:

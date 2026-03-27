@@ -1,7 +1,7 @@
 # Reusable workflow: build and validate MPAS-A for a single compiler using ECT.
 # Called by test-gcc.yml, test-nvhpc.yml, and test-intel.yml.
 #
-# Tests two MPI libraries (openmpi + mpich) with SMIOL.
+# Builds with MPICH (Derecho default) and runs ECT with 4 MPI ranks.
 # Validation uses the Ensemble Consistency Test (PyCECT) — perturbed runs
 # compared against a pre-built ensemble summary — instead of bit-for-bit
 # log comparison.
@@ -21,10 +21,8 @@ jobs:
     name: Resolve Config
     runs-on: ubuntu-latest
     outputs:
-      image-prefix: ${{ steps.container.outputs.container-prefix }}
-      image-suffix: ${{ steps.container.outputs.container-suffix }}
+      image: ${{ steps.container.outputs.image }}
       compiler-name: ${{ steps.container.outputs.compiler-name }}
-      mpi-map: ${{ steps.container.outputs.mpi-map }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,19 +31,14 @@ jobs:
         id: container
         with:
           compiler: ${{ inputs.compiler }}
-          mpi: openmpi
+          mpi: mpich
 
   build:
     needs: config
-    strategy:
-      fail-fast: false
-      matrix:
-        mpi: [openmpi, mpich]
-
-    name: Build (${{ inputs.compiler }}, ${{ matrix.mpi }}, smiol)
+    name: Build (${{ inputs.compiler }}, mpich, smiol)
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
+      image: ${{ needs.config.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +55,7 @@ jobs:
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: exe-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol
+          name: exe-${{ inputs.compiler }}-mpich-smiol
           path: atmosphere_model
           retention-days: 1
 
@@ -72,13 +65,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mpi: [openmpi, mpich]
         member: [0, 1, 2]
 
-    name: ECT member ${{ matrix.member }} (${{ inputs.compiler }}, ${{ matrix.mpi }})
+    name: ECT member ${{ matrix.member }} (${{ inputs.compiler }})
     runs-on: ubuntu-latest
     container:
-      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
+      image: ${{ needs.config.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +80,7 @@ jobs:
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: exe-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol
+          name: exe-${{ inputs.compiler }}-mpich-smiol
 
       - name: Download test case
         if: steps.download.outcome == 'success'
@@ -142,27 +134,22 @@ jobs:
           executable: ./atmosphere_model
           member-start: '${{ matrix.member }}'
           member-end: '${{ matrix.member }}'
-          num-ranks: '1'
-          mpi-impl: ${{ matrix.mpi }}
+          num-ranks: '4'
+          mpi-impl: mpich
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history file
         uses: actions/upload-artifact@v4
         if: always() && steps.download.outcome == 'success'
         with:
-          name: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}-member${{ matrix.member }}
+          name: ect-history-${{ inputs.compiler }}-member${{ matrix.member }}
           path: history-output/history.*.nc
           retention-days: 1
 
   ect-validate:
     needs: ect-run
     if: always() && needs.ect-run.result != 'cancelled'
-    strategy:
-      fail-fast: false
-      matrix:
-        mpi: [openmpi, mpich]
-
-    name: ECT Validate (${{ inputs.compiler }}, ${{ matrix.mpi }})
+    name: ECT Validate (${{ inputs.compiler }})
     runs-on: ubuntu-latest
 
     steps:
@@ -179,7 +166,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}-*
+          pattern: ect-history-${{ inputs.compiler }}-*
           path: ect-test-files
           merge-multiple: true
 
@@ -188,17 +175,17 @@ jobs:
         uses: ./.github/actions/validate-ect
         with:
           history-dir: ect-test-files
-          label: ${{ inputs.compiler }}/${{ matrix.mpi }}/smiol
+          label: ${{ inputs.compiler }}/mpich/smiol
           dimensions: |
             compiler=${{ inputs.compiler }}
-            mpi=${{ matrix.mpi }}
+            mpi=mpich
             io=smiol
 
       - name: Upload result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ect-result-${{ inputs.compiler }}-${{ matrix.mpi }}
+          name: ect-result-${{ inputs.compiler }}
           path: ect-result.txt
           retention-days: 1
 

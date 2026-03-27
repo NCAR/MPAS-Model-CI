@@ -2,7 +2,7 @@
 # Quick validation that GCC builds and runs correctly.
 # For full matrix testing, see test-ga-nogpu.yml.
 
-name: "GCC (subset)"
+name: "GCC (CPU)"
 
 on:
   workflow_dispatch:
