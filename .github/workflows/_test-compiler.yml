@@ -25,7 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.container.outputs.image }}
-      compiler-name: ${{ steps.container.outputs.compiler-name }}
     steps:
       - uses: actions/checkout@v4
         with:

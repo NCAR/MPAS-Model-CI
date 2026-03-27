@@ -17,27 +17,6 @@ outputs:
   image:
     description: 'Fully qualified container image name'
     value: ${{ steps.resolve.outputs.image }}
-  container-prefix:
-    description: 'Image prefix (everything before {compiler}-{mpi})'
-    value: ${{ steps.resolve.outputs.container-prefix }}
-  container-suffix:
-    description: 'Image suffix (everything after {compiler}-{mpi}, excludes GPU for matrix use)'
-    value: ${{ steps.resolve.outputs.container-suffix }}
-  container-gpu-suffix:
-    description: 'Image suffix for GPU containers'
-    value: ${{ steps.resolve.outputs.container-gpu-suffix }}
-  compiler-name:
-    description: 'Compiler name as it appears in the container image tag'
-    value: ${{ steps.resolve.outputs.compiler-name }}
-  compiler-map:
-    description: 'JSON object mapping compiler families to image compiler names'
-    value: ${{ steps.resolve.outputs.compiler-map }}
-  mpi-name:
-    description: 'MPI name as it appears in the container image tag'
-    value: ${{ steps.resolve.outputs.mpi-name }}
-  mpi-map:
-    description: 'JSON object mapping canonical MPI names to image MPI names'
-    value: ${{ steps.resolve.outputs.mpi-map }}
 
 runs:
   using: 'composite'
@@ -76,49 +55,9 @@ runs:
         IMAGE="${TEMPLATE//\{compiler\}/$COMPILER_NAME}"
         IMAGE="${IMAGE//\{mpi\}/$MPI_NAME}"
 
-        # Extract prefix (everything before -{compiler}) and suffix
-        # (everything after {mpi}) from the non-GPU template for matrix use
-        PREFIX=$(echo "${CONTAINER_IMAGE}" | sed 's/-{compiler}.*//')
-        SUFFIX=$(echo "${CONTAINER_IMAGE}" | sed 's/.*{mpi}//')
-        GPU_SUFFIX=$(echo "${CONTAINER_IMAGE_GPU}" | sed 's/.*{mpi}//')
-
-        # Build compiler map JSON dynamically from CONTAINER_COMPILER_* in ci-config.env
-        CMAP="{"
-        while IFS='=' read -r key val; do
-          family="${key#CONTAINER_COMPILER_}"
-          [ "${CMAP}" != "{" ] && CMAP="${CMAP},"
-          CMAP="${CMAP}\"${family}\":\"${val}\""
-        done < <(grep '^CONTAINER_COMPILER_' "${CI_CONFIG}" | sed 's/^ *//')
-        CMAP="${CMAP}}"
-
-        # Build MPI map JSON dynamically from CONTAINER_MPI_* in ci-config.env
-        # If no CONTAINER_MPI_ entries exist, fall back to identity mapping for openmpi/mpich
-        MMAP="{"
-        MPI_ENTRIES=$(grep '^CONTAINER_MPI_' "${CI_CONFIG}" 2>/dev/null || true)
-        if [ -n "${MPI_ENTRIES}" ]; then
-          while IFS='=' read -r key val; do
-            impl="${key#CONTAINER_MPI_}"
-            [ "${MMAP}" != "{" ] && MMAP="${MMAP},"
-            MMAP="${MMAP}\"${impl}\":\"${val}\""
-          done <<< "${MPI_ENTRIES}"
-        else
-          MMAP="{\"openmpi\":\"openmpi\",\"mpich\":\"mpich\""
-        fi
-        MMAP="${MMAP}}"
-
         echo "Resolved container image: ${IMAGE}"
-        echo "  Template:  ${TEMPLATE}"
         echo "  Compiler:  ${COMPILER} → ${COMPILER_NAME}"
         echo "  MPI:       ${MPI} → ${MPI_NAME}"
         echo "  GPU:       ${GPU:-none}"
-        echo "  Prefix:    ${PREFIX}"
-        echo "  Suffix:    ${SUFFIX}"
 
         echo "image=${IMAGE}" >> $GITHUB_OUTPUT
-        echo "container-prefix=${PREFIX}" >> $GITHUB_OUTPUT
-        echo "container-suffix=${SUFFIX}" >> $GITHUB_OUTPUT
-        echo "container-gpu-suffix=${GPU_SUFFIX}" >> $GITHUB_OUTPUT
-        echo "compiler-name=${COMPILER_NAME}" >> $GITHUB_OUTPUT
-        echo "compiler-map=${CMAP}" >> $GITHUB_OUTPUT
-        echo "mpi-name=${MPI_NAME}" >> $GITHUB_OUTPUT
-        echo "mpi-map=${MMAP}" >> $GITHUB_OUTPUT
