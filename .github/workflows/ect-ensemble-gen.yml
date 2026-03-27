@@ -573,16 +573,24 @@ jobs:
 
     steps:
       - name: Delete build artifacts
-        uses: geekyeggo/delete-artifact@v5
-        with:
-          name: |
-            exe-ect-ensemble
-            spinup-restart
-          failOnError: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name == "exe-ect-ensemble" or .name == "spinup-restart") | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done
 
       - name: Delete ensemble artifacts (only after successful summary)
         if: needs.generate-summary.result == 'success'
-        uses: geekyeggo/delete-artifact@v5
-        with:
-          name: ect-ensemble-*
-          failOnError: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("ect-ensemble-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done

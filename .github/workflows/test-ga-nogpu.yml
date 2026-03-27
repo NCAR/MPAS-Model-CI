@@ -363,10 +363,13 @@ jobs:
     name: Cleanup
 
     steps:
-      - name: Delete executable artifacts
-        uses: geekyeggo/delete-artifact@v5
-        with:
-          name: |
-            exe-*
-            ect-history-*
-          failOnError: false
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-") or startswith("ect-history-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done
