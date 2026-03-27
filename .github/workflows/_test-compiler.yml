@@ -73,8 +73,9 @@ jobs:
       fail-fast: false
       matrix:
         mpi: [openmpi, mpich]
+        member: [0, 1, 2]
 
-    name: ECT (${{ inputs.compiler }}, ${{ matrix.mpi }})
+    name: ECT member ${{ matrix.member }} (${{ inputs.compiler }}, ${{ matrix.mpi }})
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
@@ -133,23 +134,23 @@ jobs:
             echo "available=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run perturbed MPAS-A
+      - name: Run perturbed MPAS-A (member ${{ matrix.member }})
         if: steps.download.outcome == 'success'
         uses: ./.github/actions/run-perturb-mpas
         with:
           base-dir: base-case
           executable: ./atmosphere_model
-          member-start: '0'
-          member-end: '2'
+          member-start: '${{ matrix.member }}'
+          member-end: '${{ matrix.member }}'
           num-ranks: '1'
           mpi-impl: ${{ matrix.mpi }}
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
-      - name: Upload history files
+      - name: Upload history file
         uses: actions/upload-artifact@v4
         if: always() && steps.download.outcome == 'success'
         with:
-          name: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}
+          name: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}-member${{ matrix.member }}
           path: history-output/history.*.nc
           retention-days: 1
 
@@ -178,8 +179,9 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}
+          pattern: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}-*
           path: ect-test-files
+          merge-multiple: true
 
       - name: Run ECT validation
         if: steps.download.outcome == 'success'
