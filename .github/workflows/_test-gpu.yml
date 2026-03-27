@@ -1,8 +1,8 @@
-# Reusable workflow: GPU vs CPU comparison (NVHPC) using ECT.
+# Reusable workflow: GPU vs CPU comparison (NVHPC).
 # Called by test-gpu-mpich.yml and test-gpu-openmpi.yml.
 #
 # Builds MPAS-A in both CUDA and NoGPU modes on CIRRUS self-hosted runners,
-# then validates via log comparison.
+# then validates via bit-for-bit log comparison against a reference log.
 #
 # Security: Runs on self-hosted CIRRUS runners. Only trigger via
 # workflow_dispatch by trusted maintainers — never on pull_request.

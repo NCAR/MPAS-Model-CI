@@ -82,24 +82,28 @@ runs:
         SUFFIX=$(echo "${CONTAINER_IMAGE}" | sed 's/.*{mpi}//')
         GPU_SUFFIX=$(echo "${CONTAINER_IMAGE_GPU}" | sed 's/.*{mpi}//')
 
-        # Build compiler map JSON
+        # Build compiler map JSON dynamically from CONTAINER_COMPILER_* in ci-config.env
         CMAP="{"
-        for family in gcc nvhpc oneapi; do
-          comp_var="CONTAINER_COMPILER_${family}"
-          NAME="${!comp_var:-$family}"
+        while IFS='=' read -r key val; do
+          family="${key#CONTAINER_COMPILER_}"
           [ "${CMAP}" != "{" ] && CMAP="${CMAP},"
-          CMAP="${CMAP}\"${family}\":\"${NAME}\""
-        done
+          CMAP="${CMAP}\"${family}\":\"${val}\""
+        done < <(grep '^CONTAINER_COMPILER_' "${CI_CONFIG}" | sed 's/^ *//')
         CMAP="${CMAP}}"
 
-        # Build MPI map JSON
+        # Build MPI map JSON dynamically from CONTAINER_MPI_* in ci-config.env
+        # If no CONTAINER_MPI_ entries exist, fall back to identity mapping for openmpi/mpich
         MMAP="{"
-        for impl in openmpi mpich; do
-          mpi_var="CONTAINER_MPI_${impl}"
-          NAME="${!mpi_var:-$impl}"
-          [ "${MMAP}" != "{" ] && MMAP="${MMAP},"
-          MMAP="${MMAP}\"${impl}\":\"${NAME}\""
-        done
+        MPI_ENTRIES=$(grep '^CONTAINER_MPI_' "${CI_CONFIG}" 2>/dev/null || true)
+        if [ -n "${MPI_ENTRIES}" ]; then
+          while IFS='=' read -r key val; do
+            impl="${key#CONTAINER_MPI_}"
+            [ "${MMAP}" != "{" ] && MMAP="${MMAP},"
+            MMAP="${MMAP}\"${impl}\":\"${val}\""
+          done <<< "${MPI_ENTRIES}"
+        else
+          MMAP="{\"openmpi\":\"openmpi\",\"mpich\":\"mpich\""
+        fi
         MMAP="${MMAP}}"
 
         echo "Resolved container image: ${IMAGE}"
