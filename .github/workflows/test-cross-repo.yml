@@ -30,22 +30,41 @@ on:
         default: false
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      compilers: ${{ steps.set.outputs.compilers }}
+      mpi: ${{ steps.set.outputs.mpi }}
+      repo: ${{ steps.set.outputs.repo }}
+      ref: ${{ steps.set.outputs.ref }}
+    steps:
+      - id: set
+        shell: bash
+        run: |
+          COMPILERS="${{ inputs.compilers }}"
+          echo "compilers=$(echo "[\"${COMPILERS:-gcc}\"]" | sed 's/,/","/g')" >> "$GITHUB_OUTPUT"
+          echo "mpi=${{ inputs.mpi || 'mpich' }}" >> "$GITHUB_OUTPUT"
+          echo "repo=${{ inputs.mpas-repository || 'MPAS-Dev/MPAS-Model' }}" >> "$GITHUB_OUTPUT"
+          echo "ref=${{ inputs.mpas-ref || 'develop' }}" >> "$GITHUB_OUTPUT"
+
   cpu-matrix:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        compiler: ${{ fromJSON(format('["{0}"]', replace(inputs.compilers || 'gcc', ',', '","'))) }}
+        compiler: ${{ fromJSON(needs.config.outputs.compilers) }}
     uses: ./.github/workflows/_test-compiler.yml
     with:
       compiler: ${{ matrix.compiler }}
-      mpi: ${{ inputs.mpi || 'mpich' }}
-      mpas-repository: ${{ inputs.mpas-repository || 'MPAS-Dev/MPAS-Model' }}
-      mpas-ref: ${{ inputs.mpas-ref || 'develop' }}
+      mpi: ${{ needs.config.outputs.mpi }}
+      mpas-repository: ${{ needs.config.outputs.repo }}
+      mpas-ref: ${{ needs.config.outputs.ref }}
 
   gpu:
-    if: ${{ inputs.include-gpu || false }}
+    needs: config
+    if: ${{ inputs.include-gpu }}
     uses: ./.github/workflows/_test-gpu.yml
     with:
-      mpi: ${{ inputs.mpi || 'mpich' }}
-      mpas-repository: ${{ inputs.mpas-repository || 'MPAS-Dev/MPAS-Model' }}
-      mpas-ref: ${{ inputs.mpas-ref || 'develop' }}
+      mpi: ${{ needs.config.outputs.mpi }}
+      mpas-repository: ${{ needs.config.outputs.repo }}
+      mpas-ref: ${{ needs.config.outputs.ref }}
