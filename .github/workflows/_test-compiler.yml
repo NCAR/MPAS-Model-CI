@@ -64,7 +64,7 @@ jobs:
 
   ect-run:
     needs: [config, build]
-    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
+    if: ${{ needs.build.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -151,7 +151,7 @@ jobs:
 
   ect-validate:
     needs: ect-run
-    if: always() && needs.ect-run.result != 'cancelled'
+    if: ${{ needs.ect-run.result == 'success' }}
     name: ECT Validate (${{ inputs.compiler }}, ${{ inputs.mpi }})
     runs-on: ubuntu-latest
 
