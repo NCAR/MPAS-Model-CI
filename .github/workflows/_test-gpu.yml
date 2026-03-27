@@ -75,7 +75,9 @@ jobs:
       - name: Overlay CI infrastructure
         if: ${{ inputs.mpas-repository != '' }}
         shell: bash
-        run: cp -r _ci/.github . && rm -rf _ci
+        run: |
+          cp -r _ci/.github . && rm -rf _ci
+          echo "## Source: ${{ inputs.mpas-repository }}@${{ inputs.mpas-ref }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build MPAS-A (double precision, OpenACC)
         uses: ./.github/actions/build-mpas

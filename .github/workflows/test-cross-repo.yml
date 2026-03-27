@@ -42,10 +42,22 @@ jobs:
         shell: bash
         run: |
           COMPILERS="${{ inputs.compilers }}"
+          REPO="${{ inputs.mpas-repository || 'MPAS-Dev/MPAS-Model' }}"
+          REF="${{ inputs.mpas-ref || 'develop' }}"
+          MPI="${{ inputs.mpi || 'mpich' }}"
+
           echo "compilers=$(echo "[\"${COMPILERS:-gcc}\"]" | sed 's/,/","/g')" >> "$GITHUB_OUTPUT"
-          echo "mpi=${{ inputs.mpi || 'mpich' }}" >> "$GITHUB_OUTPUT"
-          echo "repo=${{ inputs.mpas-repository || 'MPAS-Dev/MPAS-Model' }}" >> "$GITHUB_OUTPUT"
-          echo "ref=${{ inputs.mpas-ref || 'develop' }}" >> "$GITHUB_OUTPUT"
+          echo "mpi=${MPI}" >> "$GITHUB_OUTPUT"
+          echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+
+          echo "## Cross-Repo Test" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Source** | [\`${REPO}@${REF}\`](https://github.com/${REPO}/tree/${REF}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Compilers** | \`${COMPILERS:-gcc}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **MPI** | \`${MPI}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **GPU** | \`${{ inputs.include-gpu || false }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
   cpu-matrix:
     needs: config
