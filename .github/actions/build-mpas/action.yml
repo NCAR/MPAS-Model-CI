@@ -98,6 +98,8 @@ runs:
           sed -i "/^nvhpc:/,/^[a-z]/ s/\"CXXFLAGS_OPT = /\"CXXFLAGS_OPT = ${ARCH} /" Makefile
           sed -i "/^nvhpc:/,/^[a-z]/ s/\"LDFLAGS_OPT = /\"LDFLAGS_OPT = ${ARCH} /" Makefile
           EXTRA_MAKE_FLAGS="${NVHPC_EXTRA_MAKE_FLAGS}"
+        elif [ "${COMPILER_FAMILY}" = "oneapi" ]; then
+          EXTRA_MAKE_FLAGS="${ONEAPI_EXTRA_MAKE_FLAGS}"
         fi
 
         echo "  Make target: ${MAKE_TARGET}"
