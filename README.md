@@ -9,10 +9,6 @@ MPAS-v8.3.1
 | NVHPC (subset) | [![NVHPC](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml) |
 | Intel (subset) | [![Intel](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml) |
 | GPU (subset) | [![GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml) |
-| Full Matrix | [![Full Matrix](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-ga-nogpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-ga-nogpu.yml) |
-| CIRRUS NVHPC | [![CIRRUS](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-cirrus-nvhpc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-cirrus-nvhpc.yml) |
-| ECT | [![ECT](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/ect-test.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/ect-test.yml) |
-| Unit Tests | [![Unit Tests](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/unit-tests.yml) |
 | Coverage | [![Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) |
 
 The Model for Prediction Across Scales (MPAS) is a collaborative project for
