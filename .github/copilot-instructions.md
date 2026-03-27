@@ -123,7 +123,8 @@ end do
 
 - Use `!$acc enter data copyin(...)` / `!$acc exit data copyout(...)` for
   data management
-- GPU code must produce bit-for-bit identical results to CPU code
+- GPU results are NOT expected to be bit-for-bit identical to CPU — use the
+  Ensemble Consistency Test (ECT/PyCECT) to validate statistical equivalence
 - Guard GPU-specific code with `#ifdef MPAS_OPENACC` when needed
 - Always include a CPU fallback path
 - Test with both `nogpu` and `cuda` builds
@@ -188,5 +189,5 @@ When reviewing Fortran changes in MPAS, verify:
 11. No modifications to `src/external/` or WRF physics directories
 12. New variables use camelCase; new public API uses `mpas_` prefix
 13. Fold markers (`!{{{` / `!}}}`) on new subroutines
-14. GPU code produces bit-for-bit identical results to CPU path
+14. GPU code validated via ECT (not bit-for-bit — statistical equivalence)
 15. Commit message first line ≤ 80 chars with module/variable names
