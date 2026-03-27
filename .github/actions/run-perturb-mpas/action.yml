@@ -64,14 +64,18 @@ runs:
       run: |
         source /container/config_env.sh
 
-        # Install Python deps in the same shell so PATH/env changes persist
-        if python3 -m pip install --quiet netCDF4 numpy 2>/dev/null; then
-          echo "Python deps installed via pip"
+        # Ensure netCDF4 and numpy are available.
+        # Strategy: use what the container already provides, fall back to
+        # pip, then conda.  Everything runs in one shell so PATH persists.
+        if python3 -c "import netCDF4, numpy" 2>/dev/null; then
+          echo "netCDF4/numpy already available"
+        elif python3 -m pip install --quiet netCDF4 numpy 2>/dev/null; then
+          echo "Installed netCDF4/numpy via pip"
         elif command -v conda &>/dev/null; then
-          echo "pip failed, installing Python deps via conda"
+          echo "pip failed — installing netCDF4/numpy via conda"
           conda install -y -q netCDF4 numpy
         else
-          echo "::error::Could not install netCDF4 via pip or conda"
+          echo "::error::Could not install netCDF4 (no pip, no conda)"
           exit 1
         fi
 
