@@ -225,4 +225,4 @@ jobs:
             --paginate --jq '.artifacts[] | select(.name == "exe-ect") | .id' \
           | while read id; do
               gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
-            done
+            done || true

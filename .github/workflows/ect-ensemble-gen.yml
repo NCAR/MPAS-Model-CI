@@ -581,7 +581,7 @@ jobs:
             --paginate --jq '.artifacts[] | select(.name == "exe-ect-ensemble" or .name == "spinup-restart") | .id' \
           | while read id; do
               gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
-            done
+            done || true
 
       - name: Delete ensemble artifacts (only after successful summary)
         if: needs.generate-summary.result == 'success'
@@ -593,4 +593,4 @@ jobs:
             --paginate --jq '.artifacts[] | select(.name | startswith("ect-ensemble-")) | .id' \
           | while read id; do
               gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
-            done
+            done || true
