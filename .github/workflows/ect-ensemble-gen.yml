@@ -106,10 +106,22 @@ jobs:
       image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
-      - uses: ./.github/actions/checkout-mpas-source
+      - uses: actions/checkout@v4
         with:
-          mpas-repository: ${{ inputs.mpas-repository }}
-          mpas-ref: ${{ inputs.mpas-ref }}
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ inputs.mpas-ref || '' }}
+          submodules: 'true'
+
+      - uses: actions/checkout@v4
+        if: ${{ inputs.mpas-repository != '' }}
+        with:
+          path: _ci
+          sparse-checkout: .github
+
+      - name: Overlay CI infrastructure
+        if: ${{ inputs.mpas-repository != '' }}
+        shell: bash
+        run: cp -r _ci/.github . && rm -rf _ci
 
       - name: Extract MPAS version
         id: version
