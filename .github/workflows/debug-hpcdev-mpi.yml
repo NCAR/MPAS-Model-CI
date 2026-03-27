@@ -33,17 +33,19 @@ jobs:
           find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
           echo
           echo "=== Preprocessor COMMA macro test ==="
-          cat > /tmp/test_comma.F90 << 'TESTEOF'
-#define COMMA ,
-#define DEBUG_WRITE(M) !call foo( M )
-program test
-  implicit none
-  integer :: n
-  n = 1
-  DEBUG_WRITE('hello' COMMA n)
-  print *, 'OK'
-end program test
-TESTEOF
+          {
+            echo '#define COMMA ,'
+            echo '#define DEBUG_WRITE(M) !call foo( M )'
+            echo 'program test'
+            echo '  implicit none'
+            echo '  integer :: n'
+            echo '  n = 1'
+            echo "  DEBUG_WRITE('hello' COMMA n)"
+            echo "  print *, 'OK'"
+            echo 'end program test'
+          } > /tmp/test_comma.F90
+          cat /tmp/test_comma.F90
+          echo
           echo "--- ifx (default) ---"
           ifx -free -o /tmp/test1 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
@@ -53,8 +55,8 @@ TESTEOF
           echo "--- ifx -no-fpp ---"
           ifx -no-fpp -free -o /tmp/test3 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
-          echo "--- ifx with cpp -traditional-cpp piped ---"
-          cpp -traditional-cpp -P /tmp/test_comma.F90 > /tmp/test_cpp.f90 2>&1
+          echo "--- cpp -traditional-cpp then ifx ---"
+          cpp -traditional-cpp -P /tmp/test_comma.F90 > /tmp/test_cpp.f90 2>&1 || true
           cat /tmp/test_cpp.f90
           ifx -free -o /tmp/test4 /tmp/test_cpp.f90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
@@ -88,17 +90,19 @@ TESTEOF
           find / -name 'mpi.mod' -o -name 'mpi_f08.mod' 2>/dev/null || true
           echo
           echo "=== Preprocessor COMMA macro test ==="
-          cat > /tmp/test_comma.F90 << 'TESTEOF'
-#define COMMA ,
-#define DEBUG_WRITE(M) !call foo( M )
-program test
-  implicit none
-  integer :: n
-  n = 1
-  DEBUG_WRITE('hello' COMMA n)
-  print *, 'OK'
-end program test
-TESTEOF
+          {
+            echo '#define COMMA ,'
+            echo '#define DEBUG_WRITE(M) !call foo( M )'
+            echo 'program test'
+            echo '  implicit none'
+            echo '  integer :: n'
+            echo '  n = 1'
+            echo "  DEBUG_WRITE('hello' COMMA n)"
+            echo "  print *, 'OK'"
+            echo 'end program test'
+          } > /tmp/test_comma.F90
+          cat /tmp/test_comma.F90
+          echo
           echo "--- ifx (default) ---"
           ifx -free -o /tmp/test1 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
@@ -108,8 +112,8 @@ TESTEOF
           echo "--- ifx -no-fpp ---"
           ifx -no-fpp -free -o /tmp/test3 /tmp/test_comma.F90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
-          echo "--- ifx with cpp -traditional-cpp piped ---"
-          cpp -traditional-cpp -P /tmp/test_comma.F90 > /tmp/test_cpp.f90 2>&1
+          echo "--- cpp -traditional-cpp then ifx ---"
+          cpp -traditional-cpp -P /tmp/test_comma.F90 > /tmp/test_cpp.f90 2>&1 || true
           cat /tmp/test_cpp.f90
           ifx -free -o /tmp/test4 /tmp/test_cpp.f90 2>&1 && echo "SUCCESS" || echo "FAILED"
           echo
