@@ -44,9 +44,14 @@ runs:
         # MPAS Makefile uses `cpp` for Registry preprocessing.
         # Some containers (e.g. openSUSE Leap) don't ship it separately.
         if ! command -v cpp &>/dev/null; then
-          echo "cpp not found, creating wrapper from gcc -E"
-          printf '#!/bin/sh\nexec gcc -E "$@"\n' > /usr/local/bin/cpp
-          chmod +x /usr/local/bin/cpp
+          echo "cpp not found, installing..."
+          if command -v zypper &>/dev/null; then
+            zypper install -y --no-recommends cpp
+          elif command -v dnf &>/dev/null; then
+            dnf install -y cpp
+          elif command -v apt-get &>/dev/null; then
+            apt-get update && apt-get install -y cpp
+          fi
         fi
         
         # Map compiler input to COMPILER_FAMILY if not already set
