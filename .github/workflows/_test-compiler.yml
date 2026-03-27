@@ -26,7 +26,7 @@ jobs:
     outputs:
       image: ${{ steps.container.outputs.image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: .github
       - uses: ./.github/actions/resolve-container
@@ -43,7 +43,7 @@ jobs:
       image: ${{ needs.config.outputs.image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: 'true'
 
@@ -55,7 +55,7 @@ jobs:
           precision: double
 
       - name: Upload executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: exe-${{ inputs.compiler }}-${{ inputs.mpi }}-smiol
           path: atmosphere_model
@@ -75,11 +75,11 @@ jobs:
       image: ${{ needs.config.outputs.image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download executable
         id: download
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         continue-on-error: true
         with:
           name: exe-${{ inputs.compiler }}-${{ inputs.mpi }}-smiol
@@ -94,7 +94,7 @@ jobs:
       - name: Restore cached restart
         if: steps.download.outcome == 'success'
         id: cache-restart
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: spinup-restart.nc
           key: ect-spinup-restart
@@ -141,7 +141,7 @@ jobs:
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history file
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always() && steps.download.outcome == 'success'
         with:
           name: ect-history-${{ inputs.compiler }}-${{ inputs.mpi }}-member${{ matrix.member }}
@@ -155,18 +155,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: .github
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
       - name: Download history files
         id: download
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           pattern: ect-history-${{ inputs.compiler }}-${{ inputs.mpi }}-*
           path: ect-test-files
@@ -185,7 +185,7 @@ jobs:
 
       - name: Upload result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ect-result-${{ inputs.compiler }}-${{ inputs.mpi }}
           path: ect-result.txt

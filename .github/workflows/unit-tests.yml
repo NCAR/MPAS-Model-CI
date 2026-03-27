@@ -49,11 +49,11 @@ jobs:
           sudo apt-get install -y gcc-${{ matrix.gcc-version }} g++-${{ matrix.gcc-version }} gfortran-${{ matrix.gcc-version }}
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Cache pFUnit
         id: cache-pfunit
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           key: pfunit-${{ env.PFUNIT_VERSION }}-gcc-${{ matrix.gcc-version }}
           path: ${{ env.PFUNIT_PATH }}/install
@@ -94,7 +94,7 @@ jobs:
 
       - name: Upload test log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: unit-tests-log-gcc-${{ matrix.gcc-version }}
           path: tests/build/unit-tests.log

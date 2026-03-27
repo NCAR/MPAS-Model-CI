@@ -126,7 +126,7 @@ Compiles MPAS-A for a given compiler family. Maps input names (`gcc`, `nvhpc`, `
 
 ### download-testdata
 
-Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Uses `actions/cache@v4` to cache the archive (key: `testdata-v1-{archive}`), falling back to `curl` download with retry logic (`--retry 5 --retry-delay 5`). Reads `DATA_RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
+Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Uses `actions/cache@v5` to cache the archive (key: `testdata-v1-{archive}`), falling back to `curl` download with retry logic (`--retry 5 --retry-delay 5`). Reads `DATA_RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
 
 ### run-mpas
 
@@ -266,7 +266,7 @@ The validate-ect action replaced ~80 lines of duplicated inline logic across thr
 
 ### ECT Key Constraints
 
-- **24-hour spin-up**: Hydrometeor fields are zero in cold-start `init.nc`. The ensemble generation workflow runs a 24h unperturbed simulation (4 MPI ranks, `strict-exit-check: 'false'`) first, then uses the restart file as the starting point for all perturbed members. The restart file is both **cached** (`actions/cache/save@v4`, key `ect-spinup-restart-{sha}`) and **pushed to `NCAR/mpas-ci-data`** immediately after the spinup job completes — before ensemble members run. This ensures the restart persists even if later jobs fail. Consumer workflows (`ect-test.yml`, `test-cirrus-nvhpc.yml`) try cache restore first, then fall back to downloading from `mpas-ci-data` via curl. **MPAS restart requirements**: restart mode needs (1) a file named `restart.YYYY-MM-DD_HH.MM.SS.nc` matching the filename template in `streams.atmosphere`, and (2) a `restart_timestamp` text file containing that timestamp. The `run-perturb-mpas` action handles both automatically. See Price-Broncucia et al. (2025), Section 3.2.
+- **24-hour spin-up**: Hydrometeor fields are zero in cold-start `init.nc`. The ensemble generation workflow runs a 24h unperturbed simulation (4 MPI ranks, `strict-exit-check: 'false'`) first, then uses the restart file as the starting point for all perturbed members. The restart file is both **cached** (`actions/cache/save@v5`, key `ect-spinup-restart-{sha}`) and **pushed to `NCAR/mpas-ci-data`** immediately after the spinup job completes — before ensemble members run. This ensures the restart persists even if later jobs fail. Consumer workflows (`ect-test.yml`, `test-cirrus-nvhpc.yml`) try cache restore first, then fall back to downloading from `mpas-ci-data` via curl. **MPAS restart requirements**: restart mode needs (1) a file named `restart.YYYY-MM-DD_HH.MM.SS.nc` matching the filename template in `streams.atmosphere`, and (2) a `restart_timestamp` text file containing that timestamp. The `run-perturb-mpas` action handles both automatically. See Price-Broncucia et al. (2025), Section 3.2.
 - **PyCECT requires ensemble size >= number of output variables** (~47 after trimming for the 120km case; minimum 48). The default of 200 members is recommended. The tool exits 0 even on failure — always verify the output file exists.
 - **History time slice selection**: `trim_history.py` always extracts the **last** time slice (`--tslice -1`) from the history file, which is the end-of-run forecast state. This is critical: in cold-start mode (no spin-up restart), MPAS writes the initial state as time slice 0 before any integration — extracting that would show zero variability and PyCECT would fail. The action auto-detects the number of slices and always selects the last one regardless of run mode. Trimmed files also have excluded variables removed (PV diagnostics, integers, edge velocity per `ect_excluded_vars.txt`) to keep artifact sizes manageable.
 - **PyCECT `--jsonfile` path pitfall**: `pyEnsSumMPAS.py` writes auto-detected exclusions to `NEW.<jsonfile>`. If `--jsonfile` includes a directory (e.g., `pycect/exclude.json`), it tries to create `NEW.pycect/exclude.json` — a nonexistent directory — and crashes. Always pass a filename in the working directory, not a subdirectory path.
@@ -286,13 +286,13 @@ How it works:
 
 Build job checkout pattern:
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v5
   with:
     repository: ${{ inputs.mpas-repository || github.repository }}
     ref: ${{ inputs.mpas-ref || '' }}
     submodules: 'true'
 
-- uses: actions/checkout@v4
+- uses: actions/checkout@v5
   if: ${{ inputs.mpas-repository != '' }}
   with:
     path: _ci
@@ -342,7 +342,7 @@ GitHub only shows the workflow_dispatch trigger button for workflows defined on 
 
 ## Test Data and Caching
 
-Test case archives are hosted in `NCAR/mpas-ci-data` and downloaded via `download-testdata`. The action uses `actions/cache@v4` with key `testdata-v1-{archive}` to cache archives across workflow runs, avoiding repeated large downloads.
+Test case archives are hosted in `NCAR/mpas-ci-data` and downloaded via `download-testdata`. The action uses `actions/cache@v5` with key `testdata-v1-{archive}` to cache archives across workflow runs, avoiding repeated large downloads.
 
 Test cases:
 - `240km.tar.gz` — standard test case used by `test-ga-nogpu` and `test-cirrus-nvhpc` run jobs

@@ -59,7 +59,7 @@ jobs:
       ensemble-size: ${{ steps.compute.outputs.ensemble-size }}
       container-image: ${{ steps.container.outputs.image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: .github
 
@@ -106,13 +106,13 @@ jobs:
       image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: ${{ inputs.mpas-repository || github.repository }}
           ref: ${{ inputs.mpas-ref || '' }}
           submodules: 'true'
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: ${{ inputs.mpas-repository != '' }}
         with:
           path: _ci
@@ -139,7 +139,7 @@ jobs:
           precision: double
 
       - name: Upload executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: exe-ect-ensemble
           path: atmosphere_model
@@ -159,18 +159,18 @@ jobs:
       image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Restore cached restart
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: spinup-restart.nc
           key: ect-spinup-restart
 
       - name: Download executable
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: exe-ect-ensemble
 
@@ -205,13 +205,13 @@ jobs:
 
       - name: Cache restart file
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: spinup-restart.nc
           key: ect-spinup-restart
 
       - name: Upload restart artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: spinup-restart
           path: spinup-restart.nc
@@ -233,10 +233,10 @@ jobs:
       image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download executable
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: exe-ect-ensemble
 
@@ -250,7 +250,7 @@ jobs:
           dest-dir: base-case
 
       - name: Download spin-up restart
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: spinup-restart
 
@@ -266,7 +266,7 @@ jobs:
           restart-file: spinup-restart.nc
 
       - name: Upload history files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ect-ensemble-${{ matrix.batch.start }}-${{ matrix.batch.end }}
           path: history-output/history.*.nc
@@ -302,11 +302,11 @@ jobs:
       perturb-variable: ${{ steps.meta.outputs.perturb-variable }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: .github/test-cases/ect-120km
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -362,7 +362,7 @@ jobs:
           git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
 
       - name: Download all history files
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           pattern: ect-ensemble-*
           path: ensemble-files
@@ -422,7 +422,7 @@ jobs:
           fi
 
       - name: Upload summary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: mpas-ect-summary
@@ -468,7 +468,7 @@ jobs:
 
     steps:
       - name: Download summary artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: mpas-ect-summary
 

@@ -44,7 +44,7 @@ runs:
 
     - name: Cache test case archive
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ steps.resolve.outputs.archive }}
         key: testdata-v1-${{ steps.resolve.outputs.archive }}
