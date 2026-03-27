@@ -1,5 +1,9 @@
 name: Debug hpcdev MPI
-on: workflow_dispatch
+on:
+  push:
+    branches: [feature-ci-cleanup]
+    paths:
+      - '.github/workflows/debug-hpcdev-mpi.yml'
 
 jobs:
   openmpi:
