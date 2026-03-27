@@ -103,6 +103,7 @@ runs:
         fi
 
         echo "  Make target: ${MAKE_TARGET}"
+        echo "  Extra make flags: ${EXTRA_MAKE_FLAGS:-<none>}"
         echo "  Parallel jobs: ${MAKE_J_PROCS:-$(nproc)}"
 
         PRECISION_FLAG=""
