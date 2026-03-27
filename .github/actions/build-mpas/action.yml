@@ -40,6 +40,14 @@ runs:
           echo "Sourcing container environment from /container/config_env.sh"
           source /container/config_env.sh
         fi
+
+        # MPAS Makefile uses `cpp` for Registry preprocessing.
+        # Some containers (e.g. openSUSE Leap) don't ship it separately.
+        if ! command -v cpp &>/dev/null; then
+          echo "cpp not found, creating wrapper from gcc -E"
+          printf '#!/bin/sh\nexec gcc -E "$@"\n' > /usr/local/bin/cpp
+          chmod +x /usr/local/bin/cpp
+        fi
         
         # Map compiler input to COMPILER_FAMILY if not already set
         # The container should set this, but we provide a fallback
