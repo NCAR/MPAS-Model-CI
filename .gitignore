@@ -66,11 +66,13 @@ src/core_*/inc
 .DS_Store
 
 # Test case archives (hosted in NCAR/mpas-ci-data)
-.github/test-cases/*.tar.gz
-.github/workflows/*.tar.gz
+*.tar.gz
 
 # Reference papers
 *.pdf
+
+# Fortitude linting output
+fortitude-results.log
 
 # Editor/IDE directories
 .vscode/

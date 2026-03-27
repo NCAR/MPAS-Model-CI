@@ -30,20 +30,6 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Interrogate Runtime Environment
-      shell: bash
-      run: |
-        if [ -f .github/workflows/interrogate_env.sh ]; then
-          chmod +x .github/workflows/interrogate_env.sh
-          .github/workflows/interrogate_env.sh
-        else
-          echo "=== Environment ==="
-          echo "CC=${CC:-not set}"
-          echo "FC=${FC:-not set}"
-          which mpicc 2>/dev/null || echo "mpicc not found"
-          which mpifort 2>/dev/null || echo "mpifort not found"
-        fi
-
     - name: Build MPAS-A
       id: build
       shell: bash

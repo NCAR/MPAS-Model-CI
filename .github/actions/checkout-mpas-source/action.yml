@@ -1,0 +1,39 @@
+name: 'Checkout MPAS Source'
+description: >
+  Check out MPAS source code, optionally from an external repository.
+  When mpas-repository is set, overlays .github/ from the CI repo so that
+  composite actions and configs are available regardless of the source repo.
+
+inputs:
+  mpas-repository:
+    description: 'External MPAS repo (owner/repo). Leave empty to use the current repo.'
+    required: false
+    default: ''
+  mpas-ref:
+    description: 'Git ref (branch, tag, SHA) to check out. Leave empty for default branch.'
+    required: false
+    default: ''
+  submodules:
+    description: 'Check out submodules (true/false/recursive)'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.mpas-repository || github.repository }}
+        ref: ${{ inputs.mpas-ref || '' }}
+        submodules: ${{ inputs.submodules }}
+
+    - uses: actions/checkout@v4
+      if: ${{ inputs.mpas-repository != '' }}
+      with:
+        path: _ci
+        sparse-checkout: .github
+
+    - name: Overlay CI infrastructure
+      if: ${{ inputs.mpas-repository != '' }}
+      shell: bash
+      run: cp -r _ci/.github . && rm -rf _ci

@@ -42,6 +42,10 @@ inputs:
     description: 'Path to a spun-up restart file. When set, each member starts from this restart (with config_do_restart=.true.) instead of init.nc.'
     required: false
     default: ''
+  verbose:
+    description: 'Print detailed diagnostics for each member (namelist dumps, theta stats)'
+    required: false
+    default: 'false'
 
 outputs:
   status:
@@ -87,6 +91,7 @@ runs:
         TRIM="${{ inputs.trim }}"
         RESOLUTION="${{ inputs.resolution }}"
         RESTART_FILE="${{ inputs.restart-file }}"
+        VERBOSE="${{ inputs.verbose }}"
 
         # Settings from .github/ci-config.env — edit that file to change MPI flags
         CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
@@ -152,8 +157,9 @@ runs:
           python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/perturb_theta.py \
             "${PERTURB_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
 
-          # Fingerprint: confirm each member's restart is unique on disk
-          echo "  Restart MD5: $(md5sum "${PERTURB_FILE}" | cut -d' ' -f1)"
+          if [ "${VERBOSE}" = "true" ]; then
+            echo "  Restart MD5: $(md5sum "${PERTURB_FILE}" | cut -d' ' -f1)"
+          fi
 
           # Configure namelist and streams
           cd "${RUNDIR}"
@@ -184,19 +190,18 @@ runs:
             [ -f "${LOGFILE}" ] && cp "${LOGFILE}" "../${OUTDIR}/${LOGFILE%.out}.member${MEMBER_ID}.out"
           done
 
-          # Diagnostic: dump namelist/streams config MPAS actually used
-          echo "[$(date +%H:%M:%S)] === Namelist config ==="
-          grep -E 'config_do_restart|config_start_time|config_run_duration' namelist.atmosphere || true
-          echo "[$(date +%H:%M:%S)] === Restart stream ==="
-          grep -A2 'immutable_stream name="restart"' streams.atmosphere || true
-          echo "[$(date +%H:%M:%S)] === Output stream ==="
-          grep -A2 'stream name="output"' streams.atmosphere || true
+          if [ "${VERBOSE}" = "true" ]; then
+            echo "[$(date +%H:%M:%S)] === Namelist config ==="
+            grep -E 'config_do_restart|config_start_time|config_run_duration' namelist.atmosphere || true
+            echo "[$(date +%H:%M:%S)] === Restart stream ==="
+            grep -A2 'immutable_stream name="restart"' streams.atmosphere || true
+            echo "[$(date +%H:%M:%S)] === Output stream ==="
+            grep -A2 'stream name="output"' streams.atmosphere || true
 
-          # Diagnostic: verify theta in the restart file the model just consumed
-          echo "[$(date +%H:%M:%S)] === Restart theta check ==="
-          RESTART_NC=$(ls restart.*.nc 2>/dev/null | head -1)
-          if [ -n "${RESTART_NC}" ]; then
-            python3 -c "
+            RESTART_NC=$(ls restart.*.nc 2>/dev/null | head -1)
+            if [ -n "${RESTART_NC}" ]; then
+              echo "[$(date +%H:%M:%S)] === Restart theta check ==="
+              python3 -c "
         import netCDF4 as nc, numpy as np, sys
         ds = nc.Dataset(sys.argv[1])
         th = ds.variables['theta'][:]
@@ -204,6 +209,7 @@ runs:
         print(f'  theta dtype={th.dtype} shape={th.shape} mean={np.mean(th):.15e}')
         ds.close()
         " "${RESTART_NC}"
+            fi
           fi
 
           # Check for history file as the real success indicator
@@ -211,9 +217,9 @@ runs:
           ls -la history.*.nc 2>/dev/null || echo "  (none)"
           HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
           if [ -n "${HIST_FILE}" ]; then
-            # Diagnostic: theta stats from history output
-            echo "[$(date +%H:%M:%S)] === History theta check ==="
-            python3 -c "
+            if [ "${VERBOSE}" = "true" ]; then
+              echo "[$(date +%H:%M:%S)] === History theta check ==="
+              python3 -c "
         import netCDF4 as nc, numpy as np, sys
         ds = nc.Dataset(sys.argv[1])
         if 'theta' in ds.variables:
@@ -225,20 +231,13 @@ runs:
             print(f'  Available: {list(ds.variables.keys())[:15]}...')
         ds.close()
         " "${HIST_FILE}"
+            fi
             TSLICE=$(python3 -c "
         import netCDF4, sys
         ds = netCDF4.Dataset(sys.argv[1])
-        times = ds.variables.get('xtime')
-        ntime = ds.dimensions['Time'].size
-        last = ntime - 1
-        print(f'  Selected: {sys.argv[1]} ({ntime} time slice(s))')
-        if times is not None:
-            for i in range(ntime):
-                label = ' <-- using this' if i == last else ''
-                print(f'    slice {i}: {times[i].tobytes().decode().strip()}{label}')
-        print(last)
+        print(ds.dimensions['Time'].size - 1)
         ds.close()
-        " "${HIST_FILE}" | tee /dev/stderr | tail -1)
+        " "${HIST_FILE}")
             echo "[$(date +%H:%M:%S)] Using tslice=${TSLICE} (last time slice)"
             if [ "${TRIM}" = "true" ]; then
               python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/trim_history.py \

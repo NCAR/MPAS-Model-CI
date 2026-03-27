@@ -37,7 +37,7 @@ runs:
 
         REPO="${{ inputs.data-repo }}"
         REPO="${REPO:-${DATA_REPO}}"
-        ARCHIVE="${RESOLUTION}.tar.gz"
+        ARCHIVE="${DATA_RESOLUTION}.tar.gz"
 
         echo "repo=${REPO}" >> $GITHUB_OUTPUT
         echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT

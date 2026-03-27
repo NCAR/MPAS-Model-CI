@@ -126,7 +126,7 @@ Compiles MPAS-A for a given compiler family. Maps input names (`gcc`, `nvhpc`, `
 
 ### download-testdata
 
-Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Uses `actions/cache@v4` to cache the archive (key: `testdata-v1-{archive}`), falling back to `curl` download with retry logic (`--retry 5 --retry-delay 5`). Reads `RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
+Downloads and extracts a test case archive from `NCAR/mpas-ci-data`. Uses `actions/cache@v4` to cache the archive (key: `testdata-v1-{archive}`), falling back to `curl` download with retry logic (`--retry 5 --retry-delay 5`). Reads `DATA_RESOLUTION` and `DATA_REPO` from the test case's `config.env`.
 
 ### run-mpas
 
@@ -134,7 +134,7 @@ Configures namelist/streams and runs MPAS-A. Calls `download-testdata` internall
 - `mpi-impl: 'openmpi'` adds `--allow-run-as-root --oversubscribe` flags (does NOT auto-detect)
 - `mpi-impl: 'mpich'` sets `MPICH_GPU_SUPPORT_ENABLED=0` to prevent yaksa CUDA stub crashes
 - `strict-exit-check: 'false'` tolerates non-zero exit codes (gfortran IEEE warnings)
-- **Variable clobbering**: sourcing `config.env` overwrites `RESOLUTION` — the action saves and restores the input value
+- Config.env uses `DATA_RESOLUTION` (the archive/mesh resolution) to avoid collisions with action input variables
 
 ### run-perturb-mpas
 
@@ -361,7 +361,7 @@ These are downloaded via direct `curl` in workflow steps (not through `download-
 3. **Artifact patterns**: Use `continue-on-error: true` on artifact download steps and gate subsequent steps with `if: steps.<id>.outcome == 'success'` to handle missing artifacts gracefully.
 4. **YAML heredocs**: EOF terminators at column 1 inside run blocks can confuse the YAML parser. Use string concatenation for multi-line commit messages instead.
 5. **Registry.xml version extraction**: The file contains both `<?xml version="1.0"?>` and `<registry ... version="8.3.1">`. Use `grep -oP '<registry.*version="\K[^"]+'` to target only the registry version.
-6. **config.env variable clobbering**: Sourcing `config.env` sets shell variables like `RESOLUTION=120km`. If a calling script already has a `RESOLUTION` variable (e.g., `ect-120km`), it gets overwritten. Always save variables you need before sourcing, or restore them after.
+6. **config.env variable naming**: Config.env files use `DATA_RESOLUTION` (not `RESOLUTION`) for the mesh/archive resolution to avoid colliding with action input variables.
 7. **MPAS restart_timestamp**: When `config_do_restart = .true.`, MPAS reads a `restart_timestamp` text file to determine which restart file to open (matching the `filename_template` in the restart stream). Without this file the model immediately crashes with a Fortran runtime error. The file contains a single line like `2010-10-24_00:00:00`.
 8. **Default MPI ranks**: ECT ensemble generation uses 4 MPI ranks (requires `graph.info.part.4` in the test case archive). The 120km archive includes partition files for 4, 36, and 128 ranks.
 9. **Ignored files**: Some files under `.github/` may be gitignored. Use `git add -f` to force-add them when needed.

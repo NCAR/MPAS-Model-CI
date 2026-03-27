@@ -106,22 +106,10 @@ jobs:
       image: ${{ needs.prepare.outputs.container-image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/checkout-mpas-source
         with:
-          repository: ${{ inputs.mpas-repository || github.repository }}
-          ref: ${{ inputs.mpas-ref || '' }}
-          submodules: 'true'
-
-      - uses: actions/checkout@v4
-        if: ${{ inputs.mpas-repository != '' }}
-        with:
-          path: _ci
-          sparse-checkout: .github
-
-      - name: Overlay CI infrastructure
-        if: ${{ inputs.mpas-repository != '' }}
-        shell: bash
-        run: cp -r _ci/.github . && rm -rf _ci
+          mpas-repository: ${{ inputs.mpas-repository }}
+          mpas-ref: ${{ inputs.mpas-ref }}
 
       - name: Extract MPAS version
         id: version
@@ -327,7 +315,7 @@ jobs:
           echo "branch=${MPAS_BRANCH}" >> $GITHUB_OUTPUT
           echo "commit=${MPAS_COMMIT}" >> $GITHUB_OUTPUT
           echo "date=${DATE}" >> $GITHUB_OUTPUT
-          echo "resolution=${RESOLUTION}" >> $GITHUB_OUTPUT
+          echo "resolution=${DATA_RESOLUTION}" >> $GITHUB_OUTPUT
           echo "ensemble-size=${{ needs.prepare.outputs.ensemble-size }}" >> $GITHUB_OUTPUT
           echo "summary-prefix=${ECT_SUMMARY_PREFIX}" >> $GITHUB_OUTPUT
           echo "summary-name=${SUMMARY_NAME}" >> $GITHUB_OUTPUT
@@ -344,7 +332,7 @@ jobs:
           echo "  MPAS version: ${VERSION}"
           echo "  Branch:       ${MPAS_BRANCH}"
           echo "  Commit:       ${MPAS_COMMIT}"
-          echo "  Resolution:   ${RESOLUTION}"
+          echo "  Resolution:   ${DATA_RESOLUTION}"
           echo "  Compiler:     ${{ inputs.compiler || 'nvhpc' }}"
           echo "  MPI:          ${{ inputs.mpi-impl || 'mpich' }}"
           echo "  Precision:    double"

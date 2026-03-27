@@ -33,17 +33,6 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: List log artifacts
-      shell: bash
-      run: |
-        echo "=== Log artifacts ==="
-        if [ -d "${{ inputs.logs-path }}" ]; then
-          ls -la "${{ inputs.logs-path }}/"
-          find "${{ inputs.logs-path }}" -name "*.out" | sort | head -30
-        else
-          echo "WARNING: Logs directory not found: ${{ inputs.logs-path }}"
-        fi
-
     - name: Validate logs against reference
       id: validate
       shell: bash
@@ -52,16 +41,6 @@ runs:
         SCRIPT="${SCRIPT_DIR}/compare_logs.py"
         if [ ! -f "${SCRIPT}" ]; then
           SCRIPT=".github/actions/validate-logs/compare_logs.py"
-        fi
-
-        FILTER_ARGS=""
-        if [ -n "${{ inputs.log-filter }}" ]; then
-          FILTER_ARGS="--filter ${{ inputs.log-filter }}"
-        fi
-
-        EXPECTED_ARGS=""
-        if [ -n "${{ inputs.expected-configs }}" ]; then
-          EXPECTED_ARGS="--expected ${{ inputs.expected-configs }}"
         fi
 
         ARGS=("${SCRIPT}" "${{ inputs.logs-path }}" "${{ inputs.reference-log }}")

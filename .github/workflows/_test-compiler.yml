@@ -1,0 +1,145 @@
+# Reusable workflow: build, run, and validate MPAS-A for a single compiler.
+# Called by test-gcc.yml, test-nvhpc.yml, and test-intel.yml.
+#
+# Tests two MPI libraries (openmpi + mpich) with SMIOL at 1 MPI rank.
+
+name: _test-compiler
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler family (gcc, nvhpc, oneapi)'
+        required: true
+        type: string
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-prefix: ${{ steps.container.outputs.container-prefix }}
+      image-suffix: ${{ steps.container.outputs.container-suffix }}
+      compiler-name: ${{ steps.container.outputs.compiler-name }}
+      mpi-map: ${{ steps.container.outputs.mpi-map }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: openmpi
+
+  build:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [openmpi, mpich]
+
+    name: Build (${{ inputs.compiler }}, ${{ matrix.mpi }}, smiol)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          use-pio: 'false'
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: [config, build]
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [openmpi, mpich]
+
+    name: Run 1proc (${{ inputs.compiler }}, ${{ matrix.mpi }}, smiol)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download executable
+        uses: actions/download-artifact@v4
+        with:
+          name: exe-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol
+
+      - name: Run MPAS-A
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '1'
+          mpi-impl: ${{ matrix.mpi }}
+          working-dir: run-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-1proc-${{ inputs.compiler }}-${{ matrix.mpi }}-nogpu-smiol
+          path: run-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol/log.*
+          retention-days: 5
+
+  validate:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    name: Validate Results
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download all logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: logs-*
+          path: logs
+
+      - name: Validate 1-proc logs against reference
+        uses: ./.github/actions/validate-logs
+        with:
+          logs-path: logs
+          log-filter: 1proc
+          reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
+          allow-missing: 'false'
+          expected-configs: >-
+            logs-1proc-${{ inputs.compiler }}-openmpi-nogpu-smiol,
+            logs-1proc-${{ inputs.compiler }}-mpich-nogpu-smiol
+
+  cleanup:
+    needs: [run, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+
+    steps:
+      - name: Delete artifacts
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: exe-*
+          failOnError: false
