@@ -93,7 +93,7 @@ jobs:
 
       - name: Download executable
         id: download
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         continue-on-error: true
         with:
           name: exe-gpu-cuda-${{ inputs.mpi }}
@@ -180,7 +180,7 @@ jobs:
       - name: Download history files
         id: download
         continue-on-error: true
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: ect-history-gpu-cuda-${{ inputs.mpi }}-*
           path: ect-test-files

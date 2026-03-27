@@ -170,7 +170,7 @@ jobs:
 
       - name: Download executable
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: exe-ect-ensemble
 
@@ -236,7 +236,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Download executable
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: exe-ect-ensemble
 
@@ -250,7 +250,7 @@ jobs:
           dest-dir: base-case
 
       - name: Download spin-up restart
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: spinup-restart
 
@@ -362,7 +362,7 @@ jobs:
           git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
 
       - name: Download all history files
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: ect-ensemble-*
           path: ensemble-files
@@ -468,7 +468,7 @@ jobs:
 
     steps:
       - name: Download summary artifact
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: mpas-ect-summary
 

@@ -103,7 +103,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Download executable
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: exe-ect
 
@@ -194,7 +194,7 @@ jobs:
           python-version: '3.11'
 
       - name: Download history files
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: ect-history-*
           path: ect-test-files
