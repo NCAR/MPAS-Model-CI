@@ -1,8 +1,7 @@
-# Subset CI: Intel OneAPI compiler only
-# Quick validation that Intel/OneAPI builds and runs correctly.
-# For full matrix testing, see test-ga-nogpu.yml.
+# Subset CI: Intel + OpenMPI (CPU)
+# Quick ECT validation with 4 MPI ranks.
 
-name: "Intel (CPU)"
+name: "Intel+OpenMPI (CPU)"
 
 on:
   workflow_dispatch:
@@ -16,3 +15,4 @@ jobs:
     uses: ./.github/workflows/_test-compiler.yml
     with:
       compiler: oneapi
+      mpi: openmpi

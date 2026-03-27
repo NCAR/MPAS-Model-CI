@@ -5,10 +5,14 @@ MPAS-v8.3.1
 
 | Test | Status |
 |------|--------|
-| GCC (CPU) | [![GCC](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc.yml) |
-| NVHPC (CPU) | [![NVHPC](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc.yml) |
-| Intel (CPU) | [![Intel](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel.yml) |
-| NVHPC (GPU) | [![GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu.yml) |
+| GNU+MPICH (CPU) | [![GNU+MPICH](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml) |
+| GNU+OpenMPI (CPU) | [![GNU+OpenMPI](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml) |
+| Intel+MPICH (CPU) | [![Intel+MPICH](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml) |
+| Intel+OpenMPI (CPU) | [![Intel+OpenMPI](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml) |
+| NVHPC+MPICH (CPU) | [![NVHPC+MPICH](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml) |
+| NVHPC+OpenMPI (CPU) | [![NVHPC+OpenMPI](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml) |
+| NVHPC+MPICH (GPU) | [![NVHPC+MPICH GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml) |
+| NVHPC+OpenMPI (GPU) | [![NVHPC+OpenMPI GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml) |
 | Coverage | [![Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) |
 
 The Model for Prediction Across Scales (MPAS) is a collaborative project for

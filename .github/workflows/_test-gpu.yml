@@ -1,17 +1,21 @@
-# Subset CI: GPU vs CPU comparison (NVHPC/MPICH/SMIOL)
-# Builds and runs MPAS-A in both CUDA and NoGPU modes on CIRRUS
-# self-hosted runners with GPU access, then compares logs.
+# Reusable workflow: GPU vs CPU comparison (NVHPC) using ECT.
+# Called by test-gpu-mpich.yml and test-gpu-openmpi.yml.
 #
-# Security: This workflow runs on self-hosted CIRRUS runners. Only trigger
-# via workflow_dispatch by trusted maintainers — never on pull_request,
-# which could allow fork PRs to execute arbitrary code on CIRRUS hardware.
+# Builds MPAS-A in both CUDA and NoGPU modes on CIRRUS self-hosted runners,
+# then validates via log comparison.
 #
-# For full NVHPC GPU matrix, see test-cirrus-nvhpc.yml.
+# Security: Runs on self-hosted CIRRUS runners. Only trigger via
+# workflow_dispatch by trusted maintainers — never on pull_request.
 
-name: "NVHPC (GPU)"
+name: _test-gpu
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: true
+        type: string
 
 jobs:
   config:
@@ -31,7 +35,7 @@ jobs:
         id: container
         with:
           compiler: nvhpc
-          mpi: mpich
+          mpi: ${{ inputs.mpi }}
 
   build:
     needs: config
@@ -40,7 +44,7 @@ jobs:
       matrix:
         gpu: [nogpu, cuda]
 
-    name: Build (${{ matrix.gpu }})
+    name: Build (${{ matrix.gpu }}, ${{ inputs.mpi }})
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
@@ -61,7 +65,7 @@ jobs:
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: exe-gpu-${{ matrix.gpu }}
+          name: exe-gpu-${{ inputs.mpi }}-${{ matrix.gpu }}
           path: atmosphere_model
           retention-days: 1
 
@@ -73,7 +77,7 @@ jobs:
       matrix:
         gpu: [nogpu, cuda]
 
-    name: Run (${{ matrix.gpu }})
+    name: Run (${{ matrix.gpu }}, ${{ inputs.mpi }})
     runs-on:
       group: CIRRUS-4x8-gpu
     container:
@@ -91,21 +95,21 @@ jobs:
       - name: Download executable
         uses: actions/download-artifact@v4
         with:
-          name: exe-gpu-${{ matrix.gpu }}
+          name: exe-gpu-${{ inputs.mpi }}-${{ matrix.gpu }}
 
       - name: Run MPAS-A
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
           num-procs: '1'
-          mpi-impl: mpich
+          mpi-impl: ${{ inputs.mpi }}
           working-dir: run-${{ matrix.gpu }}
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: logs-1proc-nvhpc-mpich-${{ matrix.gpu }}-smiol
+          name: logs-1proc-nvhpc-${{ inputs.mpi }}-${{ matrix.gpu }}-smiol
           path: run-${{ matrix.gpu }}/log.*
           retention-days: 5
 
@@ -138,8 +142,8 @@ jobs:
           reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
           allow-missing: 'false'
           expected-configs: >-
-            logs-1proc-nvhpc-mpich-nogpu-smiol,
-            logs-1proc-nvhpc-mpich-cuda-smiol
+            logs-1proc-nvhpc-${{ inputs.mpi }}-nogpu-smiol,
+            logs-1proc-nvhpc-${{ inputs.mpi }}-cuda-smiol
 
   cleanup:
     needs: [run, validate]

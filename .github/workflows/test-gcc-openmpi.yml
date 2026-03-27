@@ -1,8 +1,7 @@
-# Subset CI: GCC compiler only
-# Quick validation that GCC builds and runs correctly.
-# For full matrix testing, see test-ga-nogpu.yml.
+# Subset CI: GNU + OpenMPI (CPU)
+# Quick ECT validation with 4 MPI ranks.
 
-name: "GCC (CPU)"
+name: "GNU+OpenMPI (CPU)"
 
 on:
   workflow_dispatch:
@@ -16,3 +15,4 @@ jobs:
     uses: ./.github/workflows/_test-compiler.yml
     with:
       compiler: gcc
+      mpi: openmpi

@@ -1,0 +1,13 @@
+# Subset CI: NVHPC + OpenMPI (GPU vs CPU)
+# Runs on CIRRUS self-hosted runners with GPU access.
+
+name: "NVHPC+OpenMPI (GPU)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-gpu.yml
+    with:
+      mpi: openmpi
