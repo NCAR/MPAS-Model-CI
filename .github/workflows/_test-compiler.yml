@@ -1,7 +1,10 @@
-# Reusable workflow: build, run, and validate MPAS-A for a single compiler.
+# Reusable workflow: build and validate MPAS-A for a single compiler using ECT.
 # Called by test-gcc.yml, test-nvhpc.yml, and test-intel.yml.
 #
-# Tests two MPI libraries (openmpi + mpich) with SMIOL at 1 MPI rank.
+# Tests two MPI libraries (openmpi + mpich) with SMIOL.
+# Validation uses the Ensemble Consistency Test (PyCECT) — perturbed runs
+# compared against a pre-built ensemble summary — instead of bit-for-bit
+# log comparison.
 
 name: _test-compiler
 
@@ -49,11 +52,12 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: Build MPAS-A
+      - name: Build MPAS-A (double precision)
         uses: ./.github/actions/build-mpas
         with:
           compiler: ${{ inputs.compiler }}
           use-pio: 'false'
+          precision: double
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
@@ -62,7 +66,7 @@ jobs:
           path: atmosphere_model
           retention-days: 1
 
-  run:
+  ect-run:
     needs: [config, build]
     if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
     strategy:
@@ -70,7 +74,7 @@ jobs:
       matrix:
         mpi: [openmpi, mpich]
 
-    name: Run 1proc (${{ inputs.compiler }}, ${{ matrix.mpi }}, smiol)
+    name: ECT (${{ inputs.compiler }}, ${{ matrix.mpi }})
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.config.outputs.image-prefix }}-${{ needs.config.outputs.compiler-name }}-${{ fromJSON(needs.config.outputs.mpi-map)[matrix.mpi] }}${{ needs.config.outputs.image-suffix }}
@@ -79,31 +83,86 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download executable
+        id: download
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: exe-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol
 
-      - name: Run MPAS-A
-        uses: ./.github/actions/run-mpas
+      - name: Download test case
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/download-testdata
         with:
+          test-case: ect-120km
+          dest-dir: base-case
+
+      - name: Restore cached restart
+        if: steps.download.outcome == 'success'
+        id: cache-restart
+        uses: actions/cache/restore@v4
+        with:
+          path: spinup-restart.nc
+          key: ect-spinup-restart
+
+      - name: Download spin-up restart
+        if: steps.download.outcome == 'success'
+        id: restart
+        shell: bash
+        run: |
+          source .github/test-cases/ect-120km/config.env
+          RESTART="${ECT_SUMMARY_PREFIX}_restart.nc"
+
+          if [ -f "spinup-restart.nc" ]; then
+            echo "Using cached restart file"
+            mv spinup-restart.nc "${RESTART}"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Downloading ${RESTART} from ${DATA_REPO}..."
+          HTTP_CODE=$(curl -sL --retry 5 --retry-delay 5 -w "%{http_code}" \
+            "https://github.com/${DATA_REPO}/raw/main/${RESTART}" \
+            -o "${RESTART}")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Downloaded restart: $(du -h ${RESTART})"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Spin-up restart not available (HTTP ${HTTP_CODE}), running from cold-start init.nc"
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run perturbed MPAS-A
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/run-perturb-mpas
+        with:
+          base-dir: base-case
           executable: ./atmosphere_model
-          num-procs: '1'
+          member-start: '0'
+          member-end: '2'
+          num-ranks: '1'
           mpi-impl: ${{ matrix.mpi }}
-          working-dir: run-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol
+          restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
-      - name: Upload logs
+      - name: Upload history files
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.download.outcome == 'success'
         with:
-          name: logs-1proc-${{ inputs.compiler }}-${{ matrix.mpi }}-nogpu-smiol
-          path: run-${{ inputs.compiler }}-${{ matrix.mpi }}-smiol/log.*
-          retention-days: 5
+          name: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}
+          path: history-output/history.*.nc
+          retention-days: 1
 
-  validate:
-    needs: run
-    if: always()
+  ect-validate:
+    needs: ect-run
+    if: always() && needs.ect-run.result != 'cancelled'
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [openmpi, mpich]
+
+    name: ECT Validate (${{ inputs.compiler }}, ${{ matrix.mpi }})
     runs-on: ubuntu-latest
-    name: Validate Results
 
     steps:
       - uses: actions/checkout@v4
@@ -114,25 +173,35 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Download all logs
+      - name: Download history files
+        id: download
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: logs-*
-          path: logs
+          name: ect-history-${{ inputs.compiler }}-${{ matrix.mpi }}
+          path: ect-test-files
 
-      - name: Validate 1-proc logs against reference
-        uses: ./.github/actions/validate-logs
+      - name: Run ECT validation
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/validate-ect
         with:
-          logs-path: logs
-          log-filter: 1proc
-          reference-log: .github/test-cases/240km/reference_log.atmosphere.0000.out
-          allow-missing: 'false'
-          expected-configs: >-
-            logs-1proc-${{ inputs.compiler }}-openmpi-nogpu-smiol,
-            logs-1proc-${{ inputs.compiler }}-mpich-nogpu-smiol
+          history-dir: ect-test-files
+          label: ${{ inputs.compiler }}/${{ matrix.mpi }}/smiol
+          dimensions: |
+            compiler=${{ inputs.compiler }}
+            mpi=${{ matrix.mpi }}
+            io=smiol
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ect-result-${{ inputs.compiler }}-${{ matrix.mpi }}
+          path: ect-result.txt
+          retention-days: 1
 
   cleanup:
-    needs: [run, validate]
+    needs: [ect-run, ect-validate]
     if: always()
     runs-on: ubuntu-latest
     name: Cleanup
@@ -141,5 +210,7 @@ jobs:
       - name: Delete artifacts
         uses: geekyeggo/delete-artifact@v5
         with:
-          name: exe-*
+          name: |
+            exe-*
+            ect-history-*
           failOnError: false
