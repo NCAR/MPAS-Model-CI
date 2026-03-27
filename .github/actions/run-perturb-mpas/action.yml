@@ -58,31 +58,22 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Install Python dependencies
-      shell: bash
-      run: |
-        # Source container environment to get miniforge Python/conda on PATH
-        if [ -f /container/config_env.sh ]; then
-          source /container/config_env.sh
-        fi
-
-        # Try pip first; fall back to conda for containers where pip
-        # can't build netCDF4 from source (missing HDF5 headers, old Python)
-        if python3 -m pip install --quiet netCDF4 numpy 2>/dev/null; then
-          echo "Installed via pip"
-        elif command -v conda &>/dev/null; then
-          echo "pip failed, falling back to conda"
-          conda install -y -q netCDF4 numpy
-        else
-          echo "::error::Could not install netCDF4 via pip or conda"
-          exit 1
-        fi
-
     - name: Run perturbed members
       id: run-members
       shell: bash
       run: |
         source /container/config_env.sh
+
+        # Install Python deps in the same shell so PATH/env changes persist
+        if python3 -m pip install --quiet netCDF4 numpy 2>/dev/null; then
+          echo "Python deps installed via pip"
+        elif command -v conda &>/dev/null; then
+          echo "pip failed, installing Python deps via conda"
+          conda install -y -q netCDF4 numpy
+        else
+          echo "::error::Could not install netCDF4 via pip or conda"
+          exit 1
+        fi
 
         # Workaround: some container images (e.g. mpich-cuda) omit LD_LIBRARY_PATH
         # from config_env.sh, preventing the NVHPC runtime from finding libcuda.so
