@@ -4,9 +4,6 @@
 name: "Cross-Repo Test"
 
 on:
-  # TEMPORARY: push trigger for testing on feature branch — remove before merge
-  push:
-    branches: [feature-cross-repo]
   workflow_dispatch:
     inputs:
       mpas-repository:
@@ -23,11 +20,13 @@ on:
         description: 'MPI implementation'
         required: false
         default: 'mpich'
-      include-gpu:
-        description: 'Include GPU (CUDA) test'
-        required: false
-        type: boolean
-        default: false
+      # GPU cross-repo testing disabled until NCAR security review of running
+      # external code on self-hosted CIRRUS runners is complete.
+      # include-gpu:
+      #   description: 'Include GPU (CUDA) test'
+      #   required: false
+      #   type: boolean
+      #   default: false
 
 jobs:
   config:
@@ -57,8 +56,6 @@ jobs:
           echo "| **Source** | [\`${REPO}@${REF}\`](https://github.com/${REPO}/tree/${REF}) |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Compilers** | \`${COMPILERS:-gcc}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **MPI** | \`${MPI}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **GPU** | \`${{ inputs.include-gpu || false }}\` |" >> "$GITHUB_STEP_SUMMARY"
-
   cpu-matrix:
     needs: config
     strategy:
@@ -72,11 +69,12 @@ jobs:
       mpas-repository: ${{ needs.config.outputs.repo }}
       mpas-ref: ${{ needs.config.outputs.ref }}
 
-  gpu:
-    needs: config
-    if: ${{ inputs.include-gpu }}
-    uses: ./.github/workflows/_test-gpu.yml
-    with:
-      mpi: ${{ needs.config.outputs.mpi }}
-      mpas-repository: ${{ needs.config.outputs.repo }}
-      mpas-ref: ${{ needs.config.outputs.ref }}
+  # GPU cross-repo testing disabled until NCAR security review is complete.
+  # gpu:
+  #   needs: config
+  #   if: ${{ inputs.include-gpu }}
+  #   uses: ./.github/workflows/_test-gpu.yml
+  #   with:
+  #     mpi: ${{ needs.config.outputs.mpi }}
+  #     mpas-repository: ${{ needs.config.outputs.repo }}
+  #     mpas-ref: ${{ needs.config.outputs.ref }}
