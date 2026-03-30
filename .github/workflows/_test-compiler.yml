@@ -7,6 +7,10 @@
 
 name: _test-compiler
 
+permissions:
+  contents: read
+  actions: write
+
 on:
   workflow_call:
     inputs:
@@ -58,12 +62,14 @@ jobs:
           repository: ${{ inputs.mpas-repository || github.repository }}
           ref: ${{ inputs.mpas-ref || '' }}
           submodules: 'true'
+          persist-credentials: false
 
       - uses: actions/checkout@v5
         if: ${{ inputs.mpas-repository != '' }}
         with:
           path: _ci
           sparse-checkout: .github
+          persist-credentials: false
 
       - name: Overlay CI infrastructure
         if: ${{ inputs.mpas-repository != '' }}

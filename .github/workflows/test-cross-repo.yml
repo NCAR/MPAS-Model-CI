@@ -45,7 +45,7 @@ jobs:
           REF="${{ inputs.mpas-ref || 'develop' }}"
           MPI="${{ inputs.mpi || 'mpich' }}"
 
-          echo "compilers=$(echo "[\"${COMPILERS:-gcc}\"]" | sed 's/,/","/g')" >> "$GITHUB_OUTPUT"
+          echo "compilers=$(printf '%s' "${COMPILERS:-gcc}" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";""))')" >> "$GITHUB_OUTPUT"
           echo "mpi=${MPI}" >> "$GITHUB_OUTPUT"
           echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
           echo "ref=${REF}" >> "$GITHUB_OUTPUT"
