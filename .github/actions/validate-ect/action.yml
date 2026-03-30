@@ -107,6 +107,26 @@ runs:
           exit 1
         fi
 
+    - name: ECT Results
+      if: steps.pycect.outputs.result != ''
+      shell: bash
+      run: |
+        LABEL="${{ inputs.label }}"
+        RESULT="${{ steps.pycect.outputs.result }}"
+        echo "================================"
+        echo "  ECT Result: ${RESULT}"
+        echo "  Label:      ${LABEL}"
+        echo "================================"
+        echo ""
+        # Print the global/regional test lines and final verdict
+        grep -E '(PASSED|FAILED|global|regional|Overall)' pycect_output.txt || true
+        echo ""
+        # Print per-variable standard-mean diagnostics if present
+        if grep -q 'standardized mean' pycect_output.txt; then
+          echo "--- Standardized Mean Summary ---"
+          grep 'standardized mean' pycect_output.txt || true
+        fi
+
     - name: Fail if summary unavailable
       if: steps.summary.outputs.available != 'true'
       shell: bash
