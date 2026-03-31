@@ -489,11 +489,14 @@ jobs:
           RESTART_NAME="${ECT_RESTART_FILE}"
           mv spinup-restart.nc "${RESTART_NAME}"
 
-          gh release upload "${RELEASE_ECT}" "${RESTART_NAME}" \
+          echo "Compressing ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))..."
+          gzip -9 "${RESTART_NAME}"
+
+          gh release upload "${RELEASE_ECT}" "${RESTART_NAME}.gz" \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
           echo "=== Published restart to release ${RELEASE_ECT} ==="
-          echo "  File: ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))"
+          echo "  File: ${RESTART_NAME}.gz ($(du -h "${RESTART_NAME}.gz" | cut -f1))"
 
   #===========================================================================
   # PUBLISH SUMMARY: Upload ensemble summary to RELEASE_ECT

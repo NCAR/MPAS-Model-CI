@@ -137,11 +137,12 @@ jobs:
           fi
 
           # Fall back to downloading from GitHub release
-          echo "Downloading ${RESTART} from release ${RELEASE_ECT}..."
+          echo "Downloading ${RESTART}.gz from release ${RELEASE_ECT}..."
           HTTP_CODE=$(curl -sL --retry 3 --retry-delay 5 -w "%{http_code}" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_ECT}/${RESTART}" \
-            -o "${RESTART}")
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_ECT}/${RESTART}.gz" \
+            -o "${RESTART}.gz")
           if [ "${HTTP_CODE}" = "200" ]; then
+            gunzip "${RESTART}.gz"
             echo "Downloaded restart: $(du -h ${RESTART})"
             echo "available=true" >> $GITHUB_OUTPUT
             echo "file=${RESTART}" >> $GITHUB_OUTPUT
