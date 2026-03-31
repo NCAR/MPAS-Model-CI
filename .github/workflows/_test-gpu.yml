@@ -164,9 +164,9 @@ jobs:
             exit 0
           fi
 
-          echo "Downloading ${RESTART} from ${GITHUB_REPOSITORY} release ${RELEASE_ECT_RESTART}..."
+          echo "Downloading ${RESTART} from ${GITHUB_REPOSITORY} release ${RELEASE_ECT}..."
           HTTP_CODE=$(curl -sL --retry 5 --retry-delay 5 -w "%{http_code}" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_ECT_RESTART}/${RESTART}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_ECT}/${RESTART}" \
             -o "${RESTART}")
           if [ "${HTTP_CODE}" = "200" ]; then
             echo "Downloaded restart: $(du -h ${RESTART})"

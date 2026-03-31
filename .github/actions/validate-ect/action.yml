@@ -42,7 +42,7 @@ runs:
         echo "summary-file=${ECT_SUMMARY_FILE}" >> $GITHUB_OUTPUT
         echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
         echo "pycect-tag=${PYCECT_TAG}" >> $GITHUB_OUTPUT
-        echo "release-tag=${RELEASE_ECT_SUMMARY}" >> $GITHUB_OUTPUT
+        echo "release-tag=${RELEASE_ECT}" >> $GITHUB_OUTPUT
 
     - name: Install PyCECT dependencies
       shell: bash

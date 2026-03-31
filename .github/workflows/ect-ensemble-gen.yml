@@ -460,47 +460,14 @@ jobs:
           fi
 
   #===========================================================================
-  # PUBLISH: Upload summary to GitHub release (ect-summary-v1)
+  # PUBLISH: Upload ECT summary + restart to GitHub release (RELEASE_ECT)
   # Security: This job NEVER checks out or executes external repository code.
-  # It only downloads the summary artifact and uploads with gh release upload.
+  # It only downloads artifacts and uploads with gh release upload.
   #===========================================================================
-  publish-summary:
-    needs: generate-summary
+  publish:
+    needs: [spinup, generate-summary]
     if: needs.generate-summary.result == 'success'
-    name: Publish Summary
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download summary artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: mpas-ect-summary
-
-      - name: Upload to GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          SUMMARY_NAME="${{ needs.generate-summary.outputs.summary-name }}"
-          SUMMARY_PREFIX="${{ needs.generate-summary.outputs.summary-prefix }}"
-          CURRENT_FILE="${SUMMARY_PREFIX}.nc"
-
-          cp "${SUMMARY_NAME}" "${CURRENT_FILE}"
-
-          gh release upload ect-summary-v1 "${CURRENT_FILE}" \
-            --repo "${GITHUB_REPOSITORY}" --clobber
-
-          echo "=== Published to release ect-summary-v1 ==="
-          echo "  File: ${CURRENT_FILE}"
-
-  #===========================================================================
-  # PUBLISH: Upload spin-up restart to GitHub release (ect-restart-v1)
-  # This lets ECT test workflows download the restart instead of cold-starting.
-  #===========================================================================
-  publish-restart:
-    needs: spinup
-    name: Publish Restart
+    name: Publish ECT Data
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -510,6 +477,11 @@ jobs:
         with:
           sparse-checkout: .github/ci-config.env
           sparse-checkout-cone-mode: false
+
+      - name: Download summary artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: mpas-ect-summary
 
       - name: Download restart artifact
         uses: actions/download-artifact@v7
@@ -521,21 +493,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           source .github/ci-config.env
-          RESTART_NAME="${ECT_RESTART_FILE}"
 
+          SUMMARY_NAME="${{ needs.generate-summary.outputs.summary-name }}"
+          SUMMARY_PREFIX="${{ needs.generate-summary.outputs.summary-prefix }}"
+          CURRENT_SUMMARY="${SUMMARY_PREFIX}.nc"
+          cp "${SUMMARY_NAME}" "${CURRENT_SUMMARY}"
+
+          RESTART_NAME="${ECT_RESTART_FILE}"
           mv spinup-restart.nc "${RESTART_NAME}"
 
-          gh release upload "${RELEASE_ECT_RESTART}" "${RESTART_NAME}" \
+          gh release upload "${RELEASE_ECT}" \
+            "${CURRENT_SUMMARY}" "${RESTART_NAME}" \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
-          echo "=== Published to release ${RELEASE_ECT_RESTART} ==="
-          echo "  File: ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))"
+          echo "=== Published to release ${RELEASE_ECT} ==="
+          echo "  Summary: ${CURRENT_SUMMARY}"
+          echo "  Restart: ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))"
 
   #===========================================================================
   # CLEANUP
   #===========================================================================
   cleanup:
-    needs: [run-ensemble, generate-summary, publish-summary, publish-restart]
+    needs: [run-ensemble, generate-summary, publish]
     if: always()
     runs-on: ubuntu-latest
     name: Cleanup

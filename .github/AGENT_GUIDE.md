@@ -110,7 +110,7 @@ Key settings:
 - `NVHPC_EXTRA_MAKE_FLAGS` / `ONEAPI_EXTRA_MAKE_FLAGS` — compiler-specific build workarounds
 - `OPENMPI_RUN_FLAGS` / `MPICH_RUN_ENV_*` — MPI runtime settings
 - `RELEASE_TESTDATA_{RES}` — GitHub release tag for `{resolution}.tar.gz` test archives (`RES` uppercased, `-` → `_`)
-- `RELEASE_ECT_SUMMARY` / `RELEASE_ECT_RESTART` — release tags for ECT summary and restart assets
+- `RELEASE_ECT` — release tag for ECT data (summary + restart), pinned to MPAS-Dev version
 - `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
 - `PYCECT_TAG` — PyCECT git tag for `validate-ect`
 - `BFB_*` — bit-for-bit test stub (reserved for `feature-ci-bfb-tests`)
@@ -152,7 +152,7 @@ Runs a standard MPAS-A case: uses `download-testdata`, copies the extracted tree
 Runs perturbed ensemble members for ECT. Requires explicit `run-duration` and `run-timeout` inputs. Sources `ci-config.env` for ECT settings (perturbation variable/magnitude, excluded-vars path, etc.). Activates conda, installs netCDF4/numpy, loops through members applying theta perturbation, runs the model, and trims history files. Supports restart mode.
 
 ### validate-ect
-Sources `ci-config.env` for summary filename, time slice, PyCECT tag, and `RELEASE_ECT_SUMMARY`; downloads the summary from the matching release URL; installs deps, clones PyCECT at `PYCECT_TAG`, runs validation, writes enriched result file with dimension metadata.
+Sources `ci-config.env` for summary filename, time slice, PyCECT tag, and `RELEASE_ECT`; downloads the summary from the matching release URL; installs deps, clones PyCECT at `PYCECT_TAG`, runs validation, writes enriched result file with dimension metadata.
 
 ## Ensemble Consistency Test (ECT)
 
