@@ -6,17 +6,18 @@ MPAS-v8.3.1
 MPICH subsets run on every push and PR. OpenMPI and GPU subsets are available via manual dispatch.
 Each test builds in double precision, runs 3 perturbed ensemble members (4 MPI ranks), and validates with [PyCECT](https://github.com/NCAR/PyCECT).
 
-| Test | Status | Container | Ranks |
-|------|--------|-----------|:-----:|
-| GNU+MPICH (CPU) | [![GNU+MPICH](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml) | `hpcdev:almalinux9-gcc14-mpich-26.02` | 4 |
-| Intel+MPICH (CPU) | [![Intel+MPICH](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml) | `hpcdev:leap-oneapi-mpich-25.09`\* | 4 |
-| NVHPC+MPICH (CPU) | [![NVHPC+MPICH](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml) | `hpcdev:almalinux9-nvhpc-mpich-26.02` | 4 |
-| GNU+OpenMPI (CPU) | [![GNU+OpenMPI](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml) | `hpcdev:almalinux9-gcc14-openmpi-26.02` | 4 |
-| Intel+OpenMPI (CPU) | [![Intel+OpenMPI](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml) | `hpcdev:leap-oneapi-openmpi-25.09`\* | 4 |
-| NVHPC+OpenMPI (CPU) | [![NVHPC+OpenMPI](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-26.02` | 4 |
-| NVHPC+MPICH (GPU) | [![NVHPC+MPICH GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml) | `hpcdev:almalinux9-nvhpc-mpich-cuda-26.02` | 4 |
-| NVHPC+OpenMPI (GPU) | [![NVHPC+OpenMPI GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-cuda-26.02` | 4 |
-| Coverage | [![Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) | | |
+| Compiler | MPI | Target | Status | Container |
+|----------|-----|--------|--------|-----------|
+| GNU | MPICH | CPU | [![GNU+MPICH (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml) | `hpcdev:almalinux9-gcc14-mpich-26.02` |
+| GNU | OpenMPI | CPU | [![GNU+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml) | `hpcdev:almalinux9-gcc14-openmpi-26.02` |
+| Intel | MPICH | CPU | [![Intel+MPICH (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml) | `hpcdev:leap-oneapi-mpich-25.09`\* |
+| Intel | OpenMPI | CPU | [![Intel+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml) | `hpcdev:leap-oneapi-openmpi-25.09`\* |
+| NVHPC | MPICH | CPU | [![NVHPC+MPICH (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml) | `hpcdev:almalinux9-nvhpc-mpich-26.02` |
+| NVHPC | OpenMPI | CPU | [![NVHPC+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-26.02` |
+| NVHPC | MPICH | GPU | [![NVHPC+MPICH (GPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml) | `hpcdev:almalinux9-nvhpc-mpich-cuda-26.02` |
+| NVHPC | OpenMPI | GPU | [![NVHPC+OpenMPI (GPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-cuda-26.02` |
+| | | | | |
+| Coverage | | | [![Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) | |
 
 \* Intel pinned to `hpcdev 25.09` (IFX 2025.2) to avoid an [IFX 2025.3 preprocessor regression](.github/ci-config.env).
 
