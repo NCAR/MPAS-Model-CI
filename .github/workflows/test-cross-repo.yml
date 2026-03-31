@@ -68,7 +68,6 @@ jobs:
       mpi: ${{ needs.config.outputs.mpi }}
       mpas-repository: ${{ needs.config.outputs.repo }}
       mpas-ref: ${{ needs.config.outputs.ref }}
-    secrets: inherit
 
   # GPU cross-repo testing disabled until NCAR security review is complete.
   # gpu:

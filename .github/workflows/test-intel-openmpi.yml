@@ -12,4 +12,4 @@ jobs:
     with:
       compiler: oneapi
       mpi: openmpi
-    secrets: inherit
+
