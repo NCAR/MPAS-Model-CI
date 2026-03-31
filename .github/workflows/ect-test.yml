@@ -110,7 +110,7 @@ jobs:
       - name: Download test case
         uses: ./.github/actions/download-testdata
         with:
-          test-case: ect-120km
+          resolution: 120km
           dest-dir: base-case
 
       - name: Restore cached restart
@@ -124,8 +124,8 @@ jobs:
         id: restart
         shell: bash
         run: |
-          source .github/test-cases/ect-120km/config.env
-          RESTART="${ECT_SUMMARY_PREFIX}_restart.nc"
+          source .github/ci-config.env
+          RESTART="${ECT_RESTART_FILE}"
 
           # Use cached file if available
           if [ -f "spinup-restart.nc" ]; then
@@ -136,10 +136,10 @@ jobs:
             exit 0
           fi
 
-          # Fall back to downloading from mpas-ci-data
-          echo "Downloading ${RESTART} from ${DATA_REPO}..."
+          # Fall back to downloading from GitHub release
+          echo "Downloading ${RESTART} from release ${RELEASE_ECT_RESTART}..."
           HTTP_CODE=$(curl -sL --retry 3 --retry-delay 5 -w "%{http_code}" \
-            "https://github.com/${DATA_REPO}/raw/main/${RESTART}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_ECT_RESTART}/${RESTART}" \
             -o "${RESTART}")
           if [ "${HTTP_CODE}" = "200" ]; then
             echo "Downloaded restart: $(du -h ${RESTART})"
@@ -157,6 +157,8 @@ jobs:
           executable: ./atmosphere_model
           member-start: ${{ matrix.member }}
           member-end: ${{ matrix.member }}
+          run-duration: '0_02:36:00'
+          run-timeout: '45'
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history file

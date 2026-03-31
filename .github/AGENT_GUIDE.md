@@ -14,6 +14,8 @@ This is `NCAR/MPAS-Model-CI`, a fork of `MPAS-Dev/MPAS-Model`. The MPAS source c
 .github/
 ├── ci-config.env                # Central CI configuration (containers, flags, mappings)
 ├── copilot-instructions.md      # MPAS Fortran coding standards for AI assistants
+├── data/
+│   └── ect_excluded_vars.txt    # ECT variable exclusion list (PyCECT)
 ├── actions/
 │   ├── build-mpas/              # Compiles MPAS-A for a given compiler
 │   ├── checkout-mpas-source/    # Cross-repo checkout with CI overlay
@@ -24,15 +26,7 @@ This is `NCAR/MPAS-Model-CI`, a fork of `MPAS-Dev/MPAS-Model`. The MPAS source c
 │   │   ├── perturb_theta.py     # IC perturbation (theta field)
 │   │   └── trim_history.py      # Trims history files for artifact upload
 │   ├── validate-ect/            # PyCECT validation
-│   ├── ect-summary/             # Consolidated ECT results table
-│   └── validate-logs/           # Log comparison (legacy, kept for debugging)
-├── test-cases/
-│   ├── 240km/config.env         # Standard test case (coverage workflow)
-│   ├── 120km/config.env         # Higher-resolution test case
-│   └── ect-120km/               # ECT-specific config
-│       ├── config.env
-│       ├── ect_excluded_vars.txt
-│       └── ect_pycect_exclude.json
+│   └── ect-summary/             # Consolidated ECT results table
 └── workflows/
     ├── _test-compiler.yml       # Reusable: CPU build + ECT validation
     ├── _test-gpu.yml            # Reusable: GPU build + ECT validation (CIRRUS)
@@ -56,7 +50,15 @@ tests/                           # pFUnit test infrastructure (repo root)
     └── test_spline_interpolation.pf
 ```
 
-External: `NCAR/mpas-ci-data` — public repo (Git LFS) hosting test case archives, ECT ensemble summary files, and spin-up restart files.
+## Test Data
+
+Test case archives, ECT ensemble summary files, and ECT spin-up restarts are stored as **GitHub release assets on this repository** (`NCAR/MPAS-Model-CI`). Each asset is versioned by its own release tag (independent of the others).
+
+Current tags: `testdata-240km-v1`, `testdata-120km-v1`, `ect-summary-v1`, `ect-restart-v1` (see `RELEASE_*` variables in `ci-config.env`).
+
+**Adding a new test case:** build the archive (`{resolution}.tar.gz`), create a release (`gh release create … --repo NCAR/MPAS-Model-CI`), attach the asset, then set `RELEASE_TESTDATA_{RES}` in `ci-config.env` (resolution uppercased with `-` → `_` in the variable name, e.g. `120KM`).
+
+`namelist.atmosphere` inside each archive carries model defaults; workflows override only what they need.
 
 ## Branch Structure
 
@@ -98,7 +100,7 @@ Same structure as `_test-compiler.yml` but builds with OpenACC (`openacc: 'true'
 
 ## Configuration: ci-config.env
 
-All container images, compiler mappings, and MPI flags are centralized in `.github/ci-config.env`. Workflows source this file via the `resolve-container` composite action.
+All container images, compiler mappings, MPI flags, per-asset release tags, ECT parameters, and BFB test stubs are centralized in `.github/ci-config.env`. Workflows source this file via the `resolve-container` composite action and/or `source` in composite steps.
 
 Key settings:
 - `CONTAINER_IMAGE` / `CONTAINER_IMAGE_GPU` — image templates with `{compiler}` and `{mpi}` placeholders
@@ -107,6 +109,11 @@ Key settings:
 - `MAKE_TARGET_{compiler}` — maps CI names to Makefile targets
 - `NVHPC_EXTRA_MAKE_FLAGS` / `ONEAPI_EXTRA_MAKE_FLAGS` — compiler-specific build workarounds
 - `OPENMPI_RUN_FLAGS` / `MPICH_RUN_ENV_*` — MPI runtime settings
+- `RELEASE_TESTDATA_{RES}` — GitHub release tag for `{resolution}.tar.gz` test archives (`RES` uppercased, `-` → `_`)
+- `RELEASE_ECT_SUMMARY` / `RELEASE_ECT_RESTART` — release tags for ECT summary and restart assets
+- `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
+- `PYCECT_TAG` — PyCECT git tag for `validate-ect`
+- `BFB_*` — bit-for-bit test stub (reserved for `feature-ci-bfb-tests`)
 
 ## Container Environment
 
@@ -135,11 +142,17 @@ Resolves a container image name from `ci-config.env` templates. Accepts `compile
 ### checkout-mpas-source
 Handles cross-repo checkout: checks out MPAS source, then overlays `.github/` from MPAS-Model-CI if testing an external repo.
 
+### download-testdata
+Takes `resolution`, looks up `RELEASE_TESTDATA_{RES}` in `ci-config.env`, downloads `{resolution}.tar.gz` from this repo’s GitHub releases (with `actions/cache`), and extracts the archive.
+
+### run-mpas
+Runs a standard MPAS-A case: uses `download-testdata`, copies the extracted tree into the run working directory, and starts the model. No longer sources per-case `test-cases/…/config.env`; optional `run-duration` / `restart-interval` override namelist defaults from the archive.
+
 ### run-perturb-mpas
-Runs perturbed ensemble members for ECT. Activates conda, installs netCDF4/numpy, then loops through members applying theta perturbation, running the model, and trimming history files. Supports restart mode.
+Runs perturbed ensemble members for ECT. Requires explicit `run-duration` and `run-timeout` inputs. Sources `ci-config.env` for ECT settings (perturbation variable/magnitude, excluded-vars path, etc.). Activates conda, installs netCDF4/numpy, loops through members applying theta perturbation, runs the model, and trims history files. Supports restart mode.
 
 ### validate-ect
-Runs PyCECT against an ensemble summary file. Installs dependencies, clones PyCECT, downloads the summary, runs validation, writes enriched result file with dimension metadata.
+Sources `ci-config.env` for summary filename, time slice, PyCECT tag, and `RELEASE_ECT_SUMMARY`; downloads the summary from the matching release URL; installs deps, clones PyCECT at `PYCECT_TAG`, runs validation, writes enriched result file with dimension metadata.
 
 ## Ensemble Consistency Test (ECT)
 
@@ -150,7 +163,7 @@ Key constraints:
 - **Spin-up restart**: cold-start `init.nc` has zero hydrometeors. Ensemble generation runs 24h unperturbed first, then perturbs from the restart.
 - **PyCECT minimum members**: ensemble size must be >= number of output variables (~48). Default: 200.
 - **Time slice**: always extract last slice (`--tslice -1`) — slice 0 in cold-start mode is the unintegrated initial state.
-- Config in `.github/test-cases/ect-120km/config.env`
+- ECT parameters and paths in `.github/ci-config.env` (`ECT_*`, `ECT_EXCLUDED_VARS`, `PYCECT_TAG`, release tags)
 
 ## Shell Scripting Notes
 
@@ -168,11 +181,11 @@ Workflows accept `mpas-repository` and `mpas-ref` inputs for testing upstream MP
 ## Security
 
 - **Self-hosted runners**: GPU workflows use `workflow_dispatch` only. Never add `pull_request` triggers — fork PRs could execute arbitrary code on CIRRUS hardware.
-- **Secret isolation**: `MPAS_CI_DATA_TOKEN` is only available in jobs that don't check out or execute external code.
+- **Secret isolation**: Test data is public release assets on this repo, so CI does not need a separate data-repo PAT for downloads.
 - **Cross-repo execution**: `workflow_dispatch` with external repo inputs runs `make` from that repo. Acceptable since only write-access users can trigger it.
 
 ## Known Issues
 
 - **IFX 2025.3 fpp regression**: breaks `#define COMMA ,` pattern in 6+ framework files. Intel pinned to hpcdev 25.09 (IFX 2025.2.1). Remove override when IFX 2025.4+ is available.
-- **NVHPC+OpenMPI**: model exits 134 (SIGABRT) on GA runners with 4 ranks. MPICH works. Low priority (dispatch-only).
+- **NVHPC+OpenMPI**: model exits 134 (SIGABRT) on GA runners with 4 ranks. MPICH works. Caller workflows and reusable CPU/GPU jobs mark this combination `continue-on-error` until resolved.
 - **NVHPC/Intel MPI F08 bindings**: broken with hpcdev MPI libraries. Both use `MPAS_MPI_F08=0` workaround.

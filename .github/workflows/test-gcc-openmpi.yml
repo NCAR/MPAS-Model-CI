@@ -12,3 +12,4 @@ jobs:
     with:
       compiler: gcc
       mpi: openmpi
+    secrets: inherit

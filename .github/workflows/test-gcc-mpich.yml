@@ -16,3 +16,4 @@ jobs:
     with:
       compiler: gcc
       mpi: mpich
+    secrets: inherit

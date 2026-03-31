@@ -1,8 +1,8 @@
 name: 'Validate ECT'
 description: >
   Run PyCECT against an ensemble summary file to validate history output.
-  Installs PyCECT at the pinned version from config.env, downloads the
-  ensemble summary from NCAR/mpas-ci-data, runs pyCECT, and writes an
+  Installs PyCECT at the pinned version from ci-config.env, downloads the
+  ensemble summary from a GitHub release, runs pyCECT, and writes an
   enriched result file with dimension metadata for the summary action.
 
 inputs:
@@ -12,10 +12,6 @@ inputs:
   label:
     description: 'Human-readable label for log annotations (e.g. gcc/mpich3/smiol/4proc)'
     required: true
-  test-case:
-    description: 'Test case config name under .github/test-cases/'
-    required: false
-    default: 'ect-120km'
   dimensions:
     description: 'Multi-line key=value pairs describing this test combination (written into result file)'
     required: false
@@ -32,6 +28,22 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Load ECT configuration
+      id: config
+      shell: bash
+      run: |
+        CI_CONFIG=".github/ci-config.env"
+        if [ ! -f "${CI_CONFIG}" ]; then
+          echo "::error::ci-config.env not found"
+          exit 1
+        fi
+        source "${CI_CONFIG}"
+
+        echo "summary-file=${ECT_SUMMARY_FILE}" >> $GITHUB_OUTPUT
+        echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
+        echo "pycect-tag=${PYCECT_TAG}" >> $GITHUB_OUTPUT
+        echo "release-tag=${RELEASE_ECT_SUMMARY}" >> $GITHUB_OUTPUT
+
     - name: Install PyCECT dependencies
       shell: bash
       run: pip install "numpy<2" scipy netCDF4
@@ -39,29 +51,30 @@ runs:
     - name: Clone PyCECT
       shell: bash
       run: |
-        source .github/test-cases/${{ inputs.test-case }}/config.env
-        echo "Cloning PyCECT at tag ${PYCECT_TAG}..."
-        git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
+        TAG="${{ steps.config.outputs.pycect-tag }}"
+        echo "Cloning PyCECT at tag ${TAG}..."
+        git clone --depth 1 --branch "${TAG}" https://github.com/NCAR/PyCECT.git pycect
 
     - name: Download ensemble summary file
       id: summary
       shell: bash
       run: |
-        source .github/test-cases/${{ inputs.test-case }}/config.env
-        SUMMARY="${ECT_SUMMARY_PREFIX}.nc"
-        echo "Downloading ${SUMMARY} from ${DATA_REPO}..."
+        SUMMARY="${{ steps.config.outputs.summary-file }}"
+        TAG="${{ steps.config.outputs.release-tag }}"
+        REPO="${GITHUB_REPOSITORY}"
+        URL="https://github.com/${REPO}/releases/download/${TAG}/${SUMMARY}"
+
+        echo "Downloading ${SUMMARY} from release ${TAG}..."
         HTTP_CODE=$(curl --retry 5 --retry-delay 5 -sL -w "%{http_code}" \
-          "https://github.com/${DATA_REPO}/raw/main/${SUMMARY}" \
-          -o "${SUMMARY}")
+          "${URL}" -o "${SUMMARY}")
         if [ "${HTTP_CODE}" != "200" ]; then
-          echo "::warning::Ensemble summary file not yet available in ${DATA_REPO} (HTTP ${HTTP_CODE})"
+          echo "::warning::Ensemble summary not available at ${URL} (HTTP ${HTTP_CODE})"
           echo "available=false" >> $GITHUB_OUTPUT
           exit 0
         fi
         echo "Downloaded summary file: $(du -h ${SUMMARY})"
         echo "available=true" >> $GITHUB_OUTPUT
         echo "summary-file=${SUMMARY}" >> $GITHUB_OUTPUT
-        echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
 
     - name: List test files
       if: steps.summary.outputs.available == 'true'
@@ -80,7 +93,7 @@ runs:
         python pycect/pyCECT.py \
           --sumfile ${{ steps.summary.outputs.summary-file }} \
           --indir ${{ inputs.history-dir }} \
-          --tslice ${{ steps.summary.outputs.tslice }} \
+          --tslice ${{ steps.config.outputs.tslice }} \
           --mpas \
           --verbose \
           --printStdMean \
@@ -118,10 +131,8 @@ runs:
         echo "  Label:      ${LABEL}"
         echo "================================"
         echo ""
-        # Print the global/regional test lines and final verdict
         grep -E '(PASSED|FAILED|global|regional|Overall)' pycect_output.txt || true
         echo ""
-        # Print per-variable standard-mean diagnostics if present
         if grep -q 'standardized mean' pycect_output.txt; then
           echo "--- Standardized Mean Summary ---"
           grep 'standardized mean' pycect_output.txt || true
@@ -131,7 +142,7 @@ runs:
       if: steps.summary.outputs.available != 'true'
       shell: bash
       run: |
-        echo "::error::ECT validation cannot run — ensemble summary file not found in NCAR/mpas-ci-data. Run ect-ensemble-gen.yml first."
+        echo "::error::ECT validation cannot run — ensemble summary file not found. Run ect-ensemble-gen.yml first."
         exit 1
 
     - name: Write result file
@@ -149,7 +160,6 @@ runs:
         fi
         echo "result=${RESULT}" >> $GITHUB_OUTPUT
 
-        # Write enriched result file with dimension metadata
         {
           echo "result=${RESULT}"
           DIMS="${{ inputs.dimensions }}"

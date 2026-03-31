@@ -1,16 +1,12 @@
 name: 'Download Test Data'
-description: 'Download and extract an MPAS test data archive from the CI data repository'
+description: 'Download and extract an MPAS test case archive from GitHub releases'
 
 inputs:
-  test-case:
-    description: 'Test case name (matches a folder in .github/test-cases/)'
+  resolution:
+    description: 'Test case resolution (e.g., 240km, 120km). Used to look up RELEASE_TESTDATA_{RES} in ci-config.env.'
     required: true
   dest-dir:
     description: 'Destination directory name for the extracted test case'
-    required: false
-    default: ''
-  data-repo:
-    description: 'GitHub repository hosting the test case data'
     required: false
     default: ''
 
@@ -22,41 +18,52 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Resolve archive name
+    - name: Resolve release tag and archive
       id: resolve
       shell: bash
       run: |
-        TEST_CASE="${{ inputs.test-case }}"
-        CONFIG_FILE="${GITHUB_WORKSPACE}/.github/test-cases/${TEST_CASE}/config.env"
+        RESOLUTION="${{ inputs.resolution }}"
+        ARCHIVE="${RESOLUTION}.tar.gz"
 
-        if [ ! -f "${CONFIG_FILE}" ]; then
-          echo "::error::Config not found: ${CONFIG_FILE}"
+        CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
+        if [ ! -f "${CI_CONFIG}" ]; then
+          echo "::error::ci-config.env not found at ${CI_CONFIG}"
           exit 1
         fi
-        source "${CONFIG_FILE}"
+        source "${CI_CONFIG}"
 
-        REPO="${{ inputs.data-repo }}"
-        REPO="${REPO:-${DATA_REPO}}"
-        ARCHIVE="${DATA_RESOLUTION}.tar.gz"
+        RES_UPPER=$(echo "${RESOLUTION}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+        TAG_VAR="RELEASE_TESTDATA_${RES_UPPER}"
+        TAG="${!TAG_VAR}"
 
-        echo "repo=${REPO}" >> $GITHUB_OUTPUT
+        if [ -z "${TAG}" ]; then
+          echo "::error::No release tag for resolution '${RESOLUTION}'. Add ${TAG_VAR}= to ci-config.env."
+          exit 1
+        fi
+
+        REPO="${GITHUB_REPOSITORY}"
+        URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE}"
+
+        echo "release-tag=${TAG}" >> $GITHUB_OUTPUT
         echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT
+        echo "url=${URL}" >> $GITHUB_OUTPUT
+        echo "Resolved: ${TAG_VAR}=${TAG} → ${URL}"
 
     - name: Cache test case archive
       id: cache
       uses: actions/cache@v5
       with:
         path: ${{ steps.resolve.outputs.archive }}
-        key: testdata-v1-${{ steps.resolve.outputs.archive }}
+        key: testdata-${{ steps.resolve.outputs.release-tag }}
 
     - name: Download test case archive
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
+        URL="${{ steps.resolve.outputs.url }}"
         ARCHIVE="${{ steps.resolve.outputs.archive }}"
-        REPO="${{ steps.resolve.outputs.repo }}"
-        echo "Downloading ${ARCHIVE} from ${REPO}..."
-        curl -fsSL --retry 5 --retry-delay 5 "https://github.com/${REPO}/raw/main/${ARCHIVE}" -o "${ARCHIVE}"
+        echo "Downloading ${ARCHIVE} from ${URL}..."
+        curl -fsSL --retry 5 --retry-delay 5 "${URL}" -o "${ARCHIVE}"
         echo "Downloaded $(du -h "${ARCHIVE}" | cut -f1)"
 
     - name: Extract test case

@@ -137,7 +137,7 @@ jobs:
         if: steps.download.outcome == 'success'
         uses: ./.github/actions/download-testdata
         with:
-          test-case: ect-120km
+          resolution: 120km
           dest-dir: base-case
 
       - name: Restore cached restart
@@ -153,8 +153,8 @@ jobs:
         id: restart
         shell: bash
         run: |
-          source .github/test-cases/ect-120km/config.env
-          RESTART="${ECT_SUMMARY_PREFIX}_restart.nc"
+          source .github/ci-config.env
+          RESTART="${ECT_RESTART_FILE}"
 
           if [ -f "spinup-restart.nc" ]; then
             echo "Using cached restart file"
@@ -164,9 +164,9 @@ jobs:
             exit 0
           fi
 
-          echo "Downloading ${RESTART} from ${DATA_REPO}..."
+          echo "Downloading ${RESTART} from ${GITHUB_REPOSITORY} release ${RELEASE_ECT_RESTART}..."
           HTTP_CODE=$(curl -sL --retry 5 --retry-delay 5 -w "%{http_code}" \
-            "https://github.com/${DATA_REPO}/raw/main/${RESTART}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_ECT_RESTART}/${RESTART}" \
             -o "${RESTART}")
           if [ "${HTTP_CODE}" = "200" ]; then
             echo "Downloaded restart: $(du -h ${RESTART})"
@@ -187,6 +187,8 @@ jobs:
           member-end: '${{ matrix.member }}'
           num-ranks: '4'
           mpi-impl: ${{ inputs.mpi }}
+          run-duration: '0_02:36:00'
+          run-timeout: '45'
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
 
       - name: Upload history file

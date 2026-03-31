@@ -11,29 +11,25 @@ inputs:
     required: false
     default: '1'
   run-duration:
-    description: 'Run duration (format: D_HH:MM:SS). Overrides config.env default.'
+    description: 'Run duration (format: D_HH:MM:SS). If empty, uses the namelist default from the test case archive.'
     required: false
     default: ''
   restart-interval:
-    description: 'Restart output interval (format: D_HH:MM:SS). Overrides config.env default.'
+    description: 'Restart output interval (format: D_HH:MM:SS). If empty, uses the streams.atmosphere default.'
     required: false
     default: ''
   resolution:
-    description: 'Test case resolution name (e.g., 240km). Used to find archive and config under .github/test-cases/<resolution>/'
+    description: 'Test case resolution name (e.g., 240km). Used to download the archive and name the working directory.'
     required: false
     default: '240km'
-  data-repo:
-    description: 'GitHub repo hosting test case archives (org/repo format)'
-    required: false
-    default: 'NCAR/mpas-ci-data'
   mpi-impl:
     description: 'MPI implementation (openmpi, mpich)'
     required: false
     default: ''
   run-timeout:
-    description: 'Run timeout in minutes. Overrides config.env default.'
+    description: 'Run timeout in minutes'
     required: false
-    default: ''
+    default: '20'
   working-dir:
     description: 'Working directory name for the run'
     required: false
@@ -54,63 +50,35 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Load test case configuration
+    - name: Resolve configuration
       id: config
       shell: bash
       run: |
         RESOLUTION="${{ inputs.resolution }}"
-        CONFIG_FILE=".github/test-cases/${RESOLUTION}/config.env"
-        
-        # Defaults
-        DURATION="0_06:00:00"
-        RESTART="0_06:00:00"
-        TIMEOUT="20"
-        
-        if [ -f "${CONFIG_FILE}" ]; then
-          echo "Loading config from ${CONFIG_FILE}"
-          source "${CONFIG_FILE}"
-          DURATION="${RUN_DURATION:-${DURATION}}"
-          RESTART="${RESTART_INTERVAL:-${RESTART}}"
-          TIMEOUT="${RUN_TIMEOUT:-${TIMEOUT}}"
-        fi
-        
-        # Apply explicit overrides from action inputs
-        if [ -n "${{ inputs.run-duration }}" ]; then
-          DURATION="${{ inputs.run-duration }}"
-        fi
-        if [ -n "${{ inputs.restart-interval }}" ]; then
-          RESTART="${{ inputs.restart-interval }}"
-        fi
-        if [ -n "${{ inputs.run-timeout }}" ]; then
-          TIMEOUT="${{ inputs.run-timeout }}"
-        fi
-        
-        # Determine working directory
         WORKDIR="${{ inputs.working-dir }}"
         if [ -z "${WORKDIR}" ]; then
           WORKDIR="run-${RESOLUTION}"
         fi
-        
-        echo "duration=${DURATION}" >> $GITHUB_OUTPUT
-        echo "restart=${RESTART}" >> $GITHUB_OUTPUT
-        echo "timeout=${TIMEOUT}" >> $GITHUB_OUTPUT
+
         echo "workdir=${WORKDIR}" >> $GITHUB_OUTPUT
         echo "resolution=${RESOLUTION}" >> $GITHUB_OUTPUT
-        
-        echo "=== Resolved test case configuration ==="
+
+        echo "=== Run configuration ==="
         echo "  Resolution: ${RESOLUTION}"
-        echo "  Duration:   ${DURATION}"
-        echo "  Restart:    ${RESTART}"
-        echo "  Timeout:    ${TIMEOUT}m"
         echo "  Work dir:   ${WORKDIR}"
+        echo "  Timeout:    ${{ inputs.run-timeout }}m"
+        if [ -n "${{ inputs.run-duration }}" ]; then
+          echo "  Duration:   ${{ inputs.run-duration }} (override)"
+        else
+          echo "  Duration:   (namelist default)"
+        fi
 
     - name: Download test case
       uses: ./.github/actions/download-testdata
       id: download
       with:
-        test-case: ${{ inputs.resolution }}
+        resolution: ${{ inputs.resolution }}
         dest-dir: ${{ steps.config.outputs.workdir }}
-        data-repo: ${{ inputs.data-repo }}
 
     - name: Link executable
       shell: bash
@@ -119,20 +87,23 @@ runs:
         chmod +x ${{ inputs.executable }}
         ln -sf $(realpath ${{ inputs.executable }}) "${WORKDIR}/atmosphere_model"
 
-    - name: Configure namelist
+    - name: Configure namelist overrides
       shell: bash
       working-directory: ${{ steps.config.outputs.workdir }}
       run: |
-        DURATION="${{ steps.config.outputs.duration }}"
-        RESTART="${{ steps.config.outputs.restart }}"
-        
-        # Modify run duration
-        sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${DURATION}'/" namelist.atmosphere
-        
-        # Modify restart interval
-        sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART}"'"/' streams.atmosphere
-        
-        echo "=== Namelist configuration ==="
+        if [ -n "${{ inputs.run-duration }}" ]; then
+          DURATION="${{ inputs.run-duration }}"
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${DURATION}'/" namelist.atmosphere
+          echo "Overrode config_run_duration = '${DURATION}'"
+        fi
+
+        if [ -n "${{ inputs.restart-interval }}" ]; then
+          RESTART="${{ inputs.restart-interval }}"
+          sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${RESTART}"'"/' streams.atmosphere
+          echo "Overrode restart output_interval = '${RESTART}'"
+        fi
+
+        echo "=== Namelist ==="
         grep config_run_duration namelist.atmosphere
 
     - name: Run MPAS-A
@@ -140,27 +111,21 @@ runs:
       shell: bash
       working-directory: ${{ steps.config.outputs.workdir }}
       run: |
-        TIMEOUT="${{ steps.config.outputs.timeout }}"
-        
-        # Source container environment if available
+        TIMEOUT="${{ inputs.run-timeout }}"
+
         if [ -f /container/config_env.sh ]; then
           source /container/config_env.sh
         fi
-        
-        # Workaround: some container images (e.g. mpich-cuda) omit LD_LIBRARY_PATH
-        # from config_env.sh, preventing the NVHPC runtime from finding libcuda.so
-        # injected by the Kubernetes NVIDIA device plugin. Remove once the MPICH-CUDA
-        # container images are fixed upstream.
+
+        # Workaround: some containers omit LD_LIBRARY_PATH from config_env.sh
         if [ -z "${LD_LIBRARY_PATH}" ]; then
           export LD_LIBRARY_PATH="/usr/lib64:/usr/lib"
         fi
-        
-        # Set MPI implementation
+
         if [ -n "${{ inputs.mpi-impl }}" ]; then
           export MPI_IMPL="${{ inputs.mpi-impl }}"
         fi
-        
-        # Settings from .github/ci-config.env — edit that file to change MPI flags
+
         CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
         if [ -f "${CI_CONFIG}" ]; then
           source "${CI_CONFIG}"
@@ -173,28 +138,24 @@ runs:
           export MPICH_GPU_SUPPORT_ENABLED="${MPICH_RUN_ENV_MPICH_GPU_SUPPORT_ENABLED:-0}"
           export MPIR_CVAR_ENABLE_GPU="${MPICH_RUN_ENV_MPIR_CVAR_ENABLE_GPU:-0}"
         fi
-        
-        # Set unlimited stack size
+
         ulimit -s unlimited 2>/dev/null || echo "Warning: Could not set unlimited stack size"
-        
+
         echo "=== Run configuration ==="
         echo "  Resolution: ${{ steps.config.outputs.resolution }}"
         echo "  Processors: ${{ inputs.num-procs }}"
-        echo "  Duration: ${{ steps.config.outputs.duration }}"
         echo "  MPI_IMPL: ${MPI_IMPL:-auto}"
         echo "  MPI_FLAGS: ${MPI_FLAGS}"
         echo "  Stack limit: $(ulimit -s)"
         echo "  Available CPUs: $(nproc 2>/dev/null || echo unknown)"
         echo "  Available RAM: $(free -m 2>/dev/null | awk '/^Mem:/{print $2 "MB"}' || echo unknown)"
         echo "  LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-not set}"
-        
-        # Run model
+
         set +e
         timeout ${TIMEOUT}m mpirun -n ${{ inputs.num-procs }} ${MPI_FLAGS} ./atmosphere_model
         RUN_STATUS=$?
         set -e
-        
-        # Set outputs
+
         echo "log-dir=$(pwd)" >> $GITHUB_OUTPUT
         echo "run-exit-code=${RUN_STATUS}" >> $GITHUB_OUTPUT
         if [ $RUN_STATUS -eq 0 ]; then

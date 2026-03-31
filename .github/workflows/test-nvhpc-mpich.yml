@@ -16,3 +16,4 @@ jobs:
     with:
       compiler: nvhpc
       mpi: mpich
+    secrets: inherit

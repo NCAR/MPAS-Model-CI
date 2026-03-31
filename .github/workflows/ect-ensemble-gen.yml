@@ -183,7 +183,7 @@ jobs:
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
-          resolution: ect-120km
+          resolution: 120km
           num-procs: '4'
           mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
           run-duration: '1_00:00:00'
@@ -194,10 +194,10 @@ jobs:
       - name: Verify restart file
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          RESTART=$(ls run-ect-120km/restart.*.nc 2>/dev/null | head -1)
+          RESTART=$(ls run-120km/restart.*.nc 2>/dev/null | head -1)
           if [ -z "${RESTART}" ]; then
             echo "::error::Spin-up did not produce a restart file"
-            ls -la run-ect-120km/*.nc 2>/dev/null || true
+            ls -la run-120km/*.nc 2>/dev/null || true
             exit 1
           fi
           echo "Spin-up restart: ${RESTART} ($(du -h ${RESTART} | cut -f1))"
@@ -246,7 +246,7 @@ jobs:
       - name: Download test case
         uses: ./.github/actions/download-testdata
         with:
-          test-case: ect-120km
+          resolution: 120km
           dest-dir: base-case
 
       - name: Download spin-up restart
@@ -263,6 +263,8 @@ jobs:
           member-end: ${{ matrix.batch.end }}
           num-ranks: ${{ inputs.num-ranks || 4 }}
           mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
+          run-duration: '0_02:36:00'
+          run-timeout: '45'
           restart-file: spinup-restart.nc
 
       - name: Upload history files
@@ -304,7 +306,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          sparse-checkout: .github/test-cases/ect-120km
+          sparse-checkout: .github
 
       - uses: actions/setup-python@v6
         with:
@@ -313,7 +315,9 @@ jobs:
       - name: Collect metadata
         id: meta
         run: |
-          source .github/test-cases/ect-120km/config.env
+          source .github/ci-config.env
+          ECT_SUMMARY_PREFIX="${ECT_SUMMARY_FILE%.nc}"
+          RUN_DURATION=0_02:36:00
           VERSION="${{ needs.build.outputs.mpas-version }}"
           DATE=$(date -u +%Y-%m-%d)
           SUMMARY_NAME="${ECT_SUMMARY_PREFIX}_v${VERSION}_${DATE//-/}.nc"
@@ -327,7 +331,7 @@ jobs:
           echo "branch=${MPAS_BRANCH}" >> $GITHUB_OUTPUT
           echo "commit=${MPAS_COMMIT}" >> $GITHUB_OUTPUT
           echo "date=${DATE}" >> $GITHUB_OUTPUT
-          echo "resolution=${DATA_RESOLUTION}" >> $GITHUB_OUTPUT
+          echo "resolution=${ECT_RESOLUTION}" >> $GITHUB_OUTPUT
           echo "ensemble-size=${{ needs.prepare.outputs.ensemble-size }}" >> $GITHUB_OUTPUT
           echo "summary-prefix=${ECT_SUMMARY_PREFIX}" >> $GITHUB_OUTPUT
           echo "summary-name=${SUMMARY_NAME}" >> $GITHUB_OUTPUT
@@ -344,7 +348,7 @@ jobs:
           echo "  MPAS version: ${VERSION}"
           echo "  Branch:       ${MPAS_BRANCH}"
           echo "  Commit:       ${MPAS_COMMIT}"
-          echo "  Resolution:   ${DATA_RESOLUTION}"
+          echo "  Resolution:   ${ECT_RESOLUTION}"
           echo "  Compiler:     ${{ inputs.compiler || 'nvhpc' }}"
           echo "  MPI:          ${{ inputs.mpi-impl || 'mpich' }}"
           echo "  Precision:    double"
@@ -358,7 +362,7 @@ jobs:
 
       - name: Clone PyCECT
         run: |
-          source .github/test-cases/ect-120km/config.env
+          source .github/ci-config.env
           git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
 
       - name: Download all history files
@@ -400,7 +404,7 @@ jobs:
           fi
 
           JSONFILE=ect_pycect_exclude.json
-          cp .github/test-cases/ect-120km/${JSONFILE} .
+          echo '{"ExcludedVar": []}' > "${JSONFILE}"
 
           python pycect/pyEnsSumMPAS.py \
             --esize ${ESIZE} \
@@ -456,15 +460,17 @@ jobs:
           fi
 
   #===========================================================================
-  # PUBLISH: Push summary to mpas-ci-data (isolated from untrusted code)
+  # PUBLISH: Upload summary to GitHub release (ect-summary-v1)
   # Security: This job NEVER checks out or executes external repository code.
-  # It only downloads the summary artifact and pushes it to mpas-ci-data.
+  # It only downloads the summary artifact and uploads with gh release upload.
   #===========================================================================
   publish-summary:
     needs: generate-summary
     if: needs.generate-summary.result == 'success'
     name: Publish Summary
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Download summary artifact
@@ -472,95 +478,21 @@ jobs:
         with:
           name: mpas-ect-summary
 
-      - name: Push summary to mpas-ci-data
+      - name: Upload to GitHub release
         env:
-          CI_DATA_TOKEN: ${{ secrets.MPAS_CI_DATA_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "${CI_DATA_TOKEN}" ]; then
-            echo "::warning::MPAS_CI_DATA_TOKEN secret not set — skipping upload to mpas-ci-data."
-            echo "Set a PAT with repo scope as MPAS_CI_DATA_TOKEN to enable automatic upload."
-            exit 0
-          fi
-
           SUMMARY_NAME="${{ needs.generate-summary.outputs.summary-name }}"
           SUMMARY_PREFIX="${{ needs.generate-summary.outputs.summary-prefix }}"
-          DATA_REPO="NCAR/mpas-ci-data"
-          VERSION="${{ needs.generate-summary.outputs.mpas-version }}"
-          BRANCH="${{ needs.generate-summary.outputs.branch }}"
-          COMMIT="${{ needs.generate-summary.outputs.commit }}"
-          DATE="${{ needs.generate-summary.outputs.date }}"
-          ESIZE="${{ needs.generate-summary.outputs.ensemble-size }}"
-          RESOLUTION="${{ needs.generate-summary.outputs.resolution }}"
-          TSLICE="${{ needs.generate-summary.outputs.tslice }}"
           CURRENT_FILE="${SUMMARY_PREFIX}.nc"
-          MPAS_REPO="${{ needs.generate-summary.outputs.mpas-repo }}"
-          COMPILER="${{ needs.generate-summary.outputs.compiler }}"
-          MPI_IMPL="${{ needs.generate-summary.outputs.mpi-impl }}"
-          PRECISION="${{ needs.generate-summary.outputs.precision }}"
-          RUN_DURATION="${{ needs.generate-summary.outputs.run-duration }}"
-          PERTURB_MAG="${{ needs.generate-summary.outputs.perturb-magnitude }}"
-          PERTURB_VAR="${{ needs.generate-summary.outputs.perturb-variable }}"
-          RESTART_FILE="${SUMMARY_PREFIX}_restart.nc"
 
-          git clone --depth 1 "https://x-access-token:${CI_DATA_TOKEN}@github.com/${DATA_REPO}.git" ci-data
+          cp "${SUMMARY_NAME}" "${CURRENT_FILE}"
 
-          mkdir -p ci-data/ect-summaries
-          cp "${SUMMARY_NAME}" "ci-data/ect-summaries/"
-          cp "${SUMMARY_NAME}" "ci-data/${CURRENT_FILE}"
+          gh release upload ect-summary-v1 "${CURRENT_FILE}" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
 
-          python3 -c "
-          import json
-          json.dump({
-              'current_summary': '${CURRENT_FILE}',
-              'versioned_summary': 'ect-summaries/${SUMMARY_NAME}',
-              'mpas_repo': '${MPAS_REPO}',
-              'mpas_version': '${VERSION}',
-              'branch': '${BRANCH}',
-              'commit': '${COMMIT}',
-              'resolution': '${RESOLUTION}',
-              'build': {
-                  'compiler': '${COMPILER}',
-                  'mpi': '${MPI_IMPL}',
-                  'precision': '${PRECISION}'
-              },
-              'run': {
-                  'duration': '${RUN_DURATION}',
-                  'perturbation_magnitude': '${PERTURB_MAG}',
-                  'perturbation_variable': '${PERTURB_VAR}',
-                  'ensemble_size': int('${ESIZE}'),
-                  'pycect_tslice': int('${TSLICE}')
-              },
-              'restart_file': '${RESTART_FILE}',
-              'generated': '${DATE}',
-              'workflow_run': '${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}'
-          }, open('ci-data/ect_summary_metadata.json', 'w'), indent=2)
-          print('Wrote ect_summary_metadata.json')
-          "
-
-          cd ci-data
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${CURRENT_FILE}" "ect-summaries/${SUMMARY_NAME}" ect_summary_metadata.json
-          MSG="Update ECT summary: MPAS v${VERSION} (${RESOLUTION})"
-          MSG="${MSG}
-
-          Source:     ${MPAS_REPO}
-          Branch:     ${BRANCH}
-          Commit:     ${COMMIT}
-          Compiler:   ${COMPILER}/${MPI_IMPL}
-          Precision:  ${PRECISION}
-          Duration:   ${RUN_DURATION}
-          Perturb:    ${PERTURB_MAG} (${PERTURB_VAR})
-          Ensemble:   ${ESIZE} members
-          Archived:   ect-summaries/${SUMMARY_NAME}
-          Generated:  ${DATE}
-          Run:        ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          git commit -m "${MSG}"
-          git push
-
-          echo "=== Pushed to ${DATA_REPO} ==="
-          echo "  Current:  ${CURRENT_FILE}"
-          echo "  Archived: ect-summaries/${SUMMARY_NAME}"
+          echo "=== Published to release ect-summary-v1 ==="
+          echo "  File: ${CURRENT_FILE}"
 
   #===========================================================================
   # CLEANUP

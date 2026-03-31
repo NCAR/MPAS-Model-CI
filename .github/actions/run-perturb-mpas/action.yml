@@ -18,10 +18,13 @@ inputs:
   member-end:
     description: 'Last ensemble member index (same as member-start for single member)'
     required: true
-  resolution:
-    description: 'Test case name for loading config.env (matches .github/test-cases/<name>/)'
+  run-duration:
+    description: 'Model run duration per member (format: D_HH:MM:SS)'
+    required: true
+  run-timeout:
+    description: 'Per-member timeout in minutes'
     required: false
-    default: 'ect-120km'
+    default: '45'
   num-ranks:
     description: 'Number of MPI ranks per member'
     required: false
@@ -64,14 +67,11 @@ runs:
       run: |
         source /container/config_env.sh
 
-        # Activate conda base env (if present) so python3 resolves to
-        # miniforge's Python, which may already ship netCDF4/numpy.
         if command -v conda &>/dev/null; then
           eval "$(conda shell.bash hook)" 2>/dev/null
           conda activate base 2>/dev/null || true
         fi
 
-        # Ensure netCDF4 and numpy are importable.
         if ! python3 -c "import netCDF4, numpy" 2>/dev/null; then
           if python3 -m pip install --quiet netCDF4 numpy 2>/dev/null; then
             echo "Installed netCDF4/numpy via pip"
@@ -85,15 +85,14 @@ runs:
         fi
         echo "python3: $(which python3) — $(python3 --version)"
 
-        # Workaround: some container images (e.g. mpich-cuda) omit LD_LIBRARY_PATH
-        # from config_env.sh, preventing the NVHPC runtime from finding libcuda.so
-        # injected by the Kubernetes NVIDIA device plugin. Remove once the MPICH-CUDA
-        # container images are fixed upstream.
         if [ -z "${LD_LIBRARY_PATH}" ]; then
           export LD_LIBRARY_PATH="/usr/lib64:/usr/lib"
         fi
 
-        source ${GITHUB_WORKSPACE}/.github/test-cases/${{ inputs.resolution }}/config.env
+        CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
+        if [ -f "${CI_CONFIG}" ]; then
+          source "${CI_CONFIG}"
+        fi
         ulimit -s unlimited 2>/dev/null || true
 
         BASEDIR="${{ inputs.base-dir }}"
@@ -104,15 +103,10 @@ runs:
         MPI_IMPL="${{ inputs.mpi-impl }}"
         OUTDIR="${{ inputs.output-dir }}"
         TRIM="${{ inputs.trim }}"
-        RESOLUTION="${{ inputs.resolution }}"
         RESTART_FILE="${{ inputs.restart-file }}"
         VERBOSE="${{ inputs.verbose }}"
-
-        # Settings from .github/ci-config.env — edit that file to change MPI flags
-        CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
-        if [ -f "${CI_CONFIG}" ]; then
-          source "${CI_CONFIG}"
-        fi
+        RUN_DURATION="${{ inputs.run-duration }}"
+        RUN_TIMEOUT="${{ inputs.run-timeout }}"
 
         MPI_FLAGS=""
         if [ "${MPI_IMPL}" = "openmpi" ]; then
@@ -120,6 +114,11 @@ runs:
         elif [ "${MPI_IMPL}" = "mpich" ]; then
           export MPICH_GPU_SUPPORT_ENABLED="${MPICH_RUN_ENV_MPICH_GPU_SUPPORT_ENABLED:-0}"
           export MPIR_CVAR_ENABLE_GPU="${MPICH_RUN_ENV_MPIR_CVAR_ENABLE_GPU:-0}"
+        fi
+
+        EXCLUDE_FILE=""
+        if [ -n "${ECT_EXCLUDED_VARS}" ]; then
+          EXCLUDE_FILE="${GITHUB_WORKSPACE}/${ECT_EXCLUDED_VARS}"
         fi
 
         mkdir -p "${OUTDIR}"
@@ -140,10 +139,7 @@ runs:
           chmod +x "${EXE}"
           ln -sf $(realpath "${EXE}") "${RUNDIR}/atmosphere_model"
 
-          # Determine file to perturb
           if [ -n "${RESTART_FILE}" ]; then
-            # Extract timestamp from restart file and rename to MPAS format.
-            # MPAS reads restart_timestamp to find restart.YYYY-MM-DD_HH.MM.SS.nc
             RESTART_TIME=$(python3 -c "
         import netCDF4, sys
         ds = netCDF4.Dataset(sys.argv[1])
@@ -176,15 +172,11 @@ runs:
             echo "  Restart MD5: $(md5sum "${PERTURB_FILE}" | cut -d' ' -f1)"
           fi
 
-          # Configure namelist and streams
           cd "${RUNDIR}"
 
           if [ -n "${RESTART_FILE}" ]; then
             sed -i "s/config_do_restart.*/config_do_restart = .true./" namelist.atmosphere
             sed -i "s/config_start_time.*/config_start_time = 'file'/" namelist.atmosphere
-            # Recompute coupled fields (theta_m, rho_zz, rho*u, etc.) from
-            # the uncoupled fields so that our perturbation to theta propagates
-            # into the prognostic theta_m used by the dynamics.
             sed -i '/&restart/a\    config_do_DAcycling = .true.' namelist.atmosphere
           fi
 
@@ -192,7 +184,6 @@ runs:
           sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="none"/' streams.atmosphere
           sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${RUN_DURATION}"'"/' streams.atmosphere
 
-          # Run model (set +e: gfortran may exit non-zero on IEEE warnings)
           echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, ${NRANKS} ranks)..."
           set +e
           timeout ${RUN_TIMEOUT}m mpirun -n ${NRANKS} ${MPI_FLAGS} ./atmosphere_model
@@ -200,7 +191,6 @@ runs:
           set -e
           echo "[$(date +%H:%M:%S)] Model finished (exit code ${RUN_STATUS})"
 
-          # Preserve log files before cleanup
           for LOGFILE in log.atmosphere.*.out; do
             [ -f "${LOGFILE}" ] && cp "${LOGFILE}" "../${OUTDIR}/${LOGFILE%.out}.member${MEMBER_ID}.out"
           done
@@ -227,7 +217,6 @@ runs:
             fi
           fi
 
-          # Check for history file as the real success indicator
           echo "[$(date +%H:%M:%S)] History files produced:"
           ls -la history.*.nc 2>/dev/null || echo "  (none)"
           HIST_FILE=$(ls -t history.*.nc 2>/dev/null | head -1 || true)
@@ -254,11 +243,11 @@ runs:
         ds.close()
         " "${HIST_FILE}")
             echo "[$(date +%H:%M:%S)] Using tslice=${TSLICE} (last time slice)"
-            if [ "${TRIM}" = "true" ]; then
+            if [ "${TRIM}" = "true" ] && [ -n "${EXCLUDE_FILE}" ] && [ -f "${EXCLUDE_FILE}" ]; then
               python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/trim_history.py \
                 "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc" \
                 --tslice ${TSLICE} \
-                --exclude-file ${GITHUB_WORKSPACE}/.github/test-cases/${RESOLUTION}/ect_excluded_vars.txt
+                --exclude-file "${EXCLUDE_FILE}"
               echo "[$(date +%H:%M:%S)] Saved trimmed history for member ${MEMBER_ID}"
             else
               cp "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc"

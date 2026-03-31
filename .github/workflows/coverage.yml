@@ -79,7 +79,7 @@ jobs:
       - name: Download test data
         uses: ./.github/actions/download-testdata
         with:
-          test-case: 240km
+          resolution: 240km
 
       - name: Run 240km test case
         run: |
