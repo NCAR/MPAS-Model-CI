@@ -495,10 +495,47 @@ jobs:
           echo "  File: ${CURRENT_FILE}"
 
   #===========================================================================
+  # PUBLISH: Upload spin-up restart to GitHub release (ect-restart-v1)
+  # This lets ECT test workflows download the restart instead of cold-starting.
+  #===========================================================================
+  publish-restart:
+    needs: spinup
+    name: Publish Restart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/ci-config.env
+          sparse-checkout-cone-mode: false
+
+      - name: Download restart artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: spinup-restart
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source .github/ci-config.env
+          RESTART_NAME="${ECT_RESTART_FILE}"
+
+          mv spinup-restart.nc "${RESTART_NAME}"
+
+          gh release upload "${RELEASE_ECT_RESTART}" "${RESTART_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+
+          echo "=== Published to release ${RELEASE_ECT_RESTART} ==="
+          echo "  File: ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))"
+
+  #===========================================================================
   # CLEANUP
   #===========================================================================
   cleanup:
-    needs: [run-ensemble, generate-summary, publish-summary]
+    needs: [run-ensemble, generate-summary, publish-summary, publish-restart]
     if: always()
     runs-on: ubuntu-latest
     name: Cleanup
