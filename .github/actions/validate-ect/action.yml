@@ -126,22 +126,46 @@ runs:
       run: |
         LABEL="${{ inputs.label }}"
         RESULT="${{ steps.pycect.outputs.result }}"
+
+        if [ "${RESULT}" = "PASSED" ]; then
+          ICON=":white_check_mark:"
+        else
+          ICON=":x:"
+        fi
+
+        {
+          echo "## ECT Result: ${ICON} ${RESULT}"
+          echo ""
+          echo "**Configuration:** \`${LABEL}\`"
+          echo ""
+          echo '```'
+          grep -E '(PASSED|FAILED|global|regional|Overall)' pycect_output.txt || true
+          echo '```'
+          if grep -q 'standardized mean' pycect_output.txt; then
+            echo ""
+            echo "<details><summary>Standardized Mean Summary</summary>"
+            echo ""
+            echo '```'
+            grep 'standardized mean' pycect_output.txt || true
+            echo '```'
+            echo "</details>"
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
         echo "================================"
         echo "  ECT Result: ${RESULT}"
         echo "  Label:      ${LABEL}"
         echo "================================"
-        echo ""
-        grep -E '(PASSED|FAILED|global|regional|Overall)' pycect_output.txt || true
-        echo ""
-        if grep -q 'standardized mean' pycect_output.txt; then
-          echo "--- Standardized Mean Summary ---"
-          grep 'standardized mean' pycect_output.txt || true
-        fi
 
     - name: Fail if summary unavailable
       if: steps.summary.outputs.available != 'true'
       shell: bash
       run: |
+        {
+          echo "## ECT Result: :warning: SKIPPED"
+          echo ""
+          echo "Ensemble summary file not found. Run \`ect-ensemble-gen.yml\` first."
+        } >> "$GITHUB_STEP_SUMMARY"
         echo "::error::ECT validation cannot run — ensemble summary file not found. Run ect-ensemble-gen.yml first."
         exit 1
 
