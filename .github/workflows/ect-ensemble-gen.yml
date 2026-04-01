@@ -490,7 +490,7 @@ jobs:
           mv spinup-restart.nc "${RESTART_NAME}"
 
           echo "Compressing ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))..."
-          gzip -9 "${RESTART_NAME}"
+          gzip -1 "${RESTART_NAME}"
 
           gh release upload "${RELEASE_ECT}" "${RESTART_NAME}.gz" \
             --repo "${GITHUB_REPOSITORY}" --clobber
