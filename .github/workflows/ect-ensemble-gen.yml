@@ -462,9 +462,10 @@ jobs:
   #===========================================================================
   # PUBLISH RESTART: Upload spin-up restart to RELEASE_ECT
   # Runs after spinup regardless of ensemble/summary outcome.
+  # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
   #===========================================================================
   publish-restart:
-    needs: spinup
+    needs: [build, spinup]
     name: Publish Restart
     runs-on: ubuntu-latest
     permissions:
@@ -486,24 +487,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           source .github/ci-config.env
+          VERSION="${{ needs.build.outputs.mpas-version }}"
+          TAG="ect-v${VERSION}"
+
+          # Create release if it doesn't exist
+          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Creating release ${TAG}..."
+            gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --title "ECT data (MPAS v${VERSION})" \
+              --notes "ECT ensemble summary and spin-up restart for MPAS v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
+          fi
+
           RESTART_NAME="${ECT_RESTART_FILE}"
           mv spinup-restart.nc "${RESTART_NAME}"
 
           echo "Compressing ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))..."
           gzip -1 "${RESTART_NAME}"
 
-          gh release upload "${RELEASE_ECT}" "${RESTART_NAME}.gz" \
+          gh release upload "${TAG}" "${RESTART_NAME}.gz" \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
-          echo "=== Published restart to release ${RELEASE_ECT} ==="
+          echo "=== Published restart to release ${TAG} ==="
           echo "  File: ${RESTART_NAME}.gz ($(du -h "${RESTART_NAME}.gz" | cut -f1))"
 
   #===========================================================================
   # PUBLISH SUMMARY: Upload ensemble summary to RELEASE_ECT
   # Only runs when summary generation succeeds.
+  # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
   #===========================================================================
   publish-summary:
-    needs: generate-summary
+    needs: [build, generate-summary]
     if: needs.generate-summary.result == 'success'
     name: Publish Summary
     runs-on: ubuntu-latest
@@ -526,16 +539,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           source .github/ci-config.env
+          VERSION="${{ needs.build.outputs.mpas-version }}"
+          TAG="ect-v${VERSION}"
+
+          # Create release if it doesn't exist
+          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Creating release ${TAG}..."
+            gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --title "ECT data (MPAS v${VERSION})" \
+              --notes "ECT ensemble summary and spin-up restart for MPAS v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
+          fi
+
           SUMMARY_NAME="${{ needs.generate-summary.outputs.summary-name }}"
           SUMMARY_PREFIX="${{ needs.generate-summary.outputs.summary-prefix }}"
           CURRENT_SUMMARY="${SUMMARY_PREFIX}.nc"
           cp "${SUMMARY_NAME}" "${CURRENT_SUMMARY}"
 
-          gh release upload "${RELEASE_ECT}" "${CURRENT_SUMMARY}" \
+          gh release upload "${TAG}" "${CURRENT_SUMMARY}" \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
-          echo "=== Published summary to release ${RELEASE_ECT} ==="
+          echo "=== Published summary to release ${TAG} ==="
           echo "  File: ${CURRENT_SUMMARY}"
+
+          source .github/ci-config.env
+          if [ "${RELEASE_ECT}" != "${TAG}" ]; then
+            echo "::warning::RELEASE_ECT in ci-config.env is '${RELEASE_ECT}' but this run published to '${TAG}'. Update ci-config.env to point test workflows at the new data."
+          fi
 
   #===========================================================================
   # CLEANUP
