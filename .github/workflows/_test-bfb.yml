@@ -1,0 +1,296 @@
+# Reusable workflow: bit-for-bit reproducibility tests.
+#
+# Verifies that MPAS-A output is byte-identical across configurable
+# combinations of I/O libraries (SMIOL, PIO) and MPI decompositions.
+# The first io-lib at the first rank-count is used as the reference;
+# every other combination must match exactly.
+
+name: _test-bfb
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler family (gcc, nvhpc, oneapi)'
+        required: true
+        type: string
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: true
+        type: string
+      resolution:
+        description: 'Test case resolution'
+        required: false
+        type: string
+        default: '240km'
+      precision:
+        description: 'Floating-point precision (single or double)'
+        required: false
+        type: string
+        default: 'single'
+      io-libs:
+        description: 'Comma-separated I/O libraries to test (smiol, pio)'
+        required: false
+        type: string
+        default: 'smiol,pio'
+      rank-counts:
+        description: 'Comma-separated MPI rank counts to test'
+        required: false
+        type: string
+        default: '1,4'
+      run-duration:
+        description: 'Model run duration (D_HH:MM:SS). Default matches BFB_* in ci-config.env (240km).'
+        required: false
+        type: string
+        default: '0_01:00:00'
+      run-timeout:
+        description: 'Run step timeout in minutes'
+        required: false
+        type: string
+        default: '10'
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+      io: ${{ steps.matrix.outputs.io }}
+      ranks: ${{ steps.matrix.outputs.ranks }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+
+      - name: Build matrices
+        id: matrix
+        shell: bash
+        run: |
+          IO_JSON=$(jq -nc --arg s '${{ inputs.io-libs }}' '($s | split(",") | map(gsub("^\\s+|\\s+$";"")))')
+          RANKS_JSON=$(jq -nc --arg s '${{ inputs.rank-counts }}' '($s | split(",") | map(gsub("^\\s+|\\s+$";"")) | map(tonumber))')
+          echo "io=${IO_JSON}" >> "$GITHUB_OUTPUT"
+          echo "ranks=${RANKS_JSON}" >> "$GITHUB_OUTPUT"
+          echo "IO matrix:    ${IO_JSON}"
+          echo "Ranks matrix: ${RANKS_JSON}"
+
+  build:
+    needs: config
+    strategy:
+      fail-fast: true
+      matrix:
+        io: ${{ fromJSON(needs.config.outputs.io) }}
+    name: Build (${{ matrix.io }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          use-pio: ${{ matrix.io == 'pio' && 'true' || 'false' }}
+          precision: ${{ inputs.precision }}
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-bfb-${{ matrix.io }}
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: [config, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        io: ${{ fromJSON(needs.config.outputs.io) }}
+        ranks: ${{ fromJSON(needs.config.outputs.ranks) }}
+    name: Run (${{ matrix.io }}, ${{ matrix.ranks }} ranks)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-bfb-${{ matrix.io }}
+
+      - name: Run MPAS-A
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ matrix.ranks }}'
+          resolution: ${{ inputs.resolution }}
+          run-duration: ${{ inputs.run-duration }}
+          run-timeout: ${{ inputs.run-timeout }}
+          mpi-impl: ${{ inputs.mpi }}
+          working-dir: run-${{ matrix.io }}-${{ matrix.ranks }}
+          strict-exit-check: 'false'
+
+      - name: Upload history output
+        uses: actions/upload-artifact@v6
+        with:
+          name: bfb-history-${{ matrix.io }}-${{ matrix.ranks }}
+          path: run-${{ matrix.io }}-${{ matrix.ranks }}/history.*.nc
+          retention-days: 1
+
+  compare:
+    needs: [config, run]
+    if: ${{ !cancelled() && needs.run.result == 'success' }}
+    name: Compare BFB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - name: Download all history files
+        uses: actions/download-artifact@v7
+        with:
+          pattern: bfb-history-*
+          path: bfb-results
+          merge-multiple: false
+
+      - name: Compare outputs
+        env:
+          IO_LIBS: ${{ inputs.io-libs }}
+          RANK_COUNTS: ${{ inputs.rank-counts }}
+        shell: bash
+        run: |
+          pip install --quiet netCDF4 numpy
+
+          IFS=',' read -ra IO_ARR <<< "${IO_LIBS}"
+          IFS=',' read -ra RANK_ARR <<< "${RANK_COUNTS}"
+          for i in "${!IO_ARR[@]}"; do IO_ARR[$i]=$(echo "${IO_ARR[$i]}" | tr -d '[:space:]'); done
+          for i in "${!RANK_ARR[@]}"; do RANK_ARR[$i]=$(echo "${RANK_ARR[$i]}" | tr -d '[:space:]'); done
+
+          REF_IO="${IO_ARR[0]}"
+          REF_RANKS="${RANK_ARR[0]}"
+
+          echo "## Bit-for-Bit Comparison" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          PASS=0
+          FAIL=0
+          ERRORS=""
+
+          REF_DIR="bfb-results/bfb-history-${REF_IO}-${REF_RANKS}"
+          REF_FILE=$(ls ${REF_DIR}/history.*.nc 2>/dev/null | head -1)
+          if [ -z "${REF_FILE}" ]; then
+            echo "::error::Reference history file not found in ${REF_DIR}"
+            echo "Available artifacts:"
+            find bfb-results -name '*.nc' -type f
+            exit 1
+          fi
+          echo "Reference: ${REF_FILE} (${REF_IO} / ${REF_RANKS} rank(s))"
+          echo "Reference: \`${REF_IO} / ${REF_RANKS} rank(s)\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          compare_files() {
+            local label="$1"
+            local test_file="$2"
+            local ref_file="$3"
+
+            if [ ! -f "${test_file}" ]; then
+              echo "::error::${label}: history file missing"
+              ERRORS="${ERRORS}\n- **${label}**: :x: history file missing"
+              FAIL=$((FAIL + 1))
+              return
+            fi
+
+            if cmp -s "${ref_file}" "${test_file}"; then
+              echo "${label}: IDENTICAL"
+              echo "- **${label}**: :white_check_mark: identical" >> "$GITHUB_STEP_SUMMARY"
+              PASS=$((PASS + 1))
+            else
+              echo "${label}: DIFFER"
+              FAIL=$((FAIL + 1))
+
+              DIFF_DETAIL=$(python3 - "${ref_file}" "${test_file}" <<'PYEOF'
+          import netCDF4 as nc, numpy as np, sys
+          ds_ref = nc.Dataset(sys.argv[1])
+          ds_test = nc.Dataset(sys.argv[2])
+          diffs = []
+          for var in ds_ref.variables:
+              if var in ds_test.variables:
+                  try:
+                      ref_data = ds_ref.variables[var][:]
+                      test_data = ds_test.variables[var][:]
+                      if not np.array_equal(ref_data, test_data):
+                          maxdiff = float(np.max(np.abs(ref_data - test_data)))
+                          diffs.append(f"{var} (max|diff|={maxdiff:.6e})")
+                  except Exception:
+                      pass
+          ds_ref.close()
+          ds_test.close()
+          if diffs:
+              print(", ".join(diffs[:10]))
+              if len(diffs) > 10:
+                  print(f"  ... and {len(diffs) - 10} more variables")
+          else:
+              print("files differ but no variable-level differences found (possible metadata change)")
+          PYEOF
+              )
+              echo "  Differing variables: ${DIFF_DETAIL}"
+              ERRORS="${ERRORS}\n- **${label}**: :x: differs — ${DIFF_DETAIL}"
+            fi
+          }
+
+          for io in "${IO_ARR[@]}"; do
+            for ranks in "${RANK_ARR[@]}"; do
+              if [ "${io}" = "${REF_IO}" ] && [ "${ranks}" = "${REF_RANKS}" ]; then
+                continue
+              fi
+              DIR="bfb-results/bfb-history-${io}-${ranks}"
+              TEST_FILE=$(ls ${DIR}/history.*.nc 2>/dev/null | head -1)
+              compare_files "${io} / ${ranks} rank(s)" "${TEST_FILE}" "${REF_FILE}"
+            done
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${ERRORS}" ]; then
+            echo -e "${ERRORS}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          TOTAL=$((PASS + FAIL))
+          echo "**Result: ${PASS}/${TOTAL} comparisons identical**" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ${FAIL} -gt 0 ]; then
+            echo "::error::BFB comparison failed: ${FAIL} of ${TOTAL} comparisons differ"
+            exit 1
+          fi
+          echo "All ${TOTAL} comparisons are bit-for-bit identical"
+
+  cleanup:
+    needs: [run, compare]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+    steps:
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-bfb-") or startswith("bfb-history-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true

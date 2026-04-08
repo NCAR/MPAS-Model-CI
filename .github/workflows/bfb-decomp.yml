@@ -1,0 +1,18 @@
+# Bit-for-bit: MPI decomposition (1 vs 4 ranks), SMIOL only.
+# Uses reusable _test-bfb; reference = 1 rank vs 4 ranks.
+
+name: "BFB: Decomposition (1 vs 4 ranks)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature-ci-bfb]
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-bfb.yml
+    with:
+      compiler: gcc
+      mpi: mpich
+      io-libs: 'smiol'
+      rank-counts: '1,4'

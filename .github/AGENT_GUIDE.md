@@ -113,7 +113,7 @@ Key settings:
 - `RELEASE_ECT` — release tag for ECT data (summary + restart), pinned to MPAS-Dev version
 - `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
 - `PYCECT_TAG` — PyCECT git tag for `validate-ect`
-- `BFB_*` — bit-for-bit test stub (reserved for `feature-ci-bfb-tests`)
+- `BFB_*` — bit-for-bit tests (`feature-ci-bfb`, workflows `bfb-io.yml`, `bfb-decomp.yml`, `_test-bfb.yml`)
 
 ## Container Environment
 
