@@ -214,41 +214,28 @@ jobs:
               return
             fi
 
+            # NetCDF byte-for-byte identity (optional fast path).
             if cmp -s "${ref_file}" "${test_file}"; then
-              echo "${label}: IDENTICAL"
-              echo "- **${label}**: :white_check_mark: identical" >> "$GITHUB_STEP_SUMMARY"
+              echo "${label}: byte-identical"
+              echo "- **${label}**: :white_check_mark: byte-identical" >> "$GITHUB_STEP_SUMMARY"
+              PASS=$((PASS + 1))
+              return
+            fi
+
+            # PIO vs SMIOL and different rank counts often change file metadata / encoding
+            # while history variables remain bitwise identical — compare data only.
+            RESULT=$(python3 "${GITHUB_WORKSPACE}/.github/scripts/compare-bfb-nc.py" "${ref_file}" "${test_file}")
+            STATUS=$?
+            IFS=$'\t' read -r CODE DETAIL <<< "${RESULT}"
+
+            if [ "${STATUS}" -eq 0 ] && [ "${CODE}" = "OK" ]; then
+              echo "${label}: data-identical (${DETAIL})"
+              echo "- **${label}**: :white_check_mark: data-identical (${DETAIL})" >> "$GITHUB_STEP_SUMMARY"
               PASS=$((PASS + 1))
             else
-              echo "${label}: DIFFER"
+              echo "${label}: DIFFER — ${DETAIL}"
               FAIL=$((FAIL + 1))
-
-              DIFF_DETAIL=$(python3 - "${ref_file}" "${test_file}" <<'PYEOF'
-          import netCDF4 as nc, numpy as np, sys
-          ds_ref = nc.Dataset(sys.argv[1])
-          ds_test = nc.Dataset(sys.argv[2])
-          diffs = []
-          for var in ds_ref.variables:
-              if var in ds_test.variables:
-                  try:
-                      ref_data = ds_ref.variables[var][:]
-                      test_data = ds_test.variables[var][:]
-                      if not np.array_equal(ref_data, test_data):
-                          maxdiff = float(np.max(np.abs(ref_data - test_data)))
-                          diffs.append(f"{var} (max|diff|={maxdiff:.6e})")
-                  except Exception:
-                      pass
-          ds_ref.close()
-          ds_test.close()
-          if diffs:
-              print(", ".join(diffs[:10]))
-              if len(diffs) > 10:
-                  print(f"  ... and {len(diffs) - 10} more variables")
-          else:
-              print("files differ but no variable-level differences found (possible metadata change)")
-          PYEOF
-              )
-              echo "  Differing variables: ${DIFF_DETAIL}"
-              ERRORS="${ERRORS}\n- **${label}**: :x: differs — ${DIFF_DETAIL}"
+              ERRORS="${ERRORS}\n- **${label}**: :x: ${DETAIL}"
             fi
           }
 
@@ -276,7 +263,7 @@ jobs:
             echo "::error::BFB comparison failed: ${FAIL} of ${TOTAL} comparisons differ"
             exit 1
           fi
-          echo "All ${TOTAL} comparisons are bit-for-bit identical"
+          echo "All ${TOTAL} comparisons passed (byte-identical files or bitwise-identical variable data)"
 
   cleanup:
     needs: [run, compare]
