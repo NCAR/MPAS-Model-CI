@@ -1,9 +1,11 @@
 # Reusable workflow: bit-for-bit reproducibility tests.
 #
-# Verifies that MPAS-A output is byte-identical across configurable
-# combinations of I/O libraries (SMIOL, PIO) and MPI decompositions.
-# The first io-lib at the first rank-count is used as the reference;
-# every other combination must match exactly.
+# Callers pass a JSON array of *variants*: independent run configurations that must
+# produce bitwise-identical history variable data. The first variant (or
+# reference_index) is the reference; every other variant is compared against it.
+#
+# MPI rank count and PIO vs SMIOL are common dimensions but not special — add any
+# new scenario by appending another variant object (and a small caller workflow).
 
 name: _test-bfb
 
@@ -15,35 +17,32 @@ on:
   workflow_call:
     inputs:
       compiler:
-        description: 'Compiler family (gcc, nvhpc, oneapi)'
+        description: 'Compiler family for the container image (gcc, nvhpc, oneapi)'
         required: true
         type: string
       mpi:
-        description: 'MPI implementation (mpich, openmpi)'
+        description: 'MPI implementation for the container image (mpich, openmpi)'
+        required: true
+        type: string
+      variants:
+        description: >
+          JSON array of at least two variant objects. Required per variant: id (unique slug),
+          ranks (MPI processes). Optional: use_pio (default false), label (summary text),
+          resolution, run_duration (override workflow defaults for that variant only).
         required: true
         type: string
       resolution:
-        description: 'Test case resolution'
+        description: 'Default test case resolution when a variant omits resolution'
         required: false
         type: string
         default: '240km'
       precision:
-        description: 'Floating-point precision (single or double)'
+        description: 'Floating-point precision for all builds (single or double)'
         required: false
         type: string
         default: 'single'
-      io-libs:
-        description: 'Comma-separated I/O libraries to test (smiol, pio)'
-        required: false
-        type: string
-        default: 'smiol,pio'
-      rank-counts:
-        description: 'Comma-separated MPI rank counts to test'
-        required: false
-        type: string
-        default: '1,4'
       run-duration:
-        description: 'Model run duration (D_HH:MM:SS). Default matches BFB_* in ci-config.env (240km).'
+        description: 'Default model run duration (D_HH:MM:SS) when a variant omits run_duration'
         required: false
         type: string
         default: '0_01:00:00'
@@ -52,6 +51,11 @@ on:
         required: false
         type: string
         default: '10'
+      reference_index:
+        description: 'Which variant (0-based) is the reference for comparison'
+        required: false
+        type: number
+        default: 0
 
 jobs:
   config:
@@ -59,8 +63,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.container.outputs.image }}
-      io: ${{ steps.matrix.outputs.io }}
-      ranks: ${{ steps.matrix.outputs.ranks }}
+      build_tags: ${{ steps.variants.outputs.build_tags }}
+      run_variants: ${{ steps.variants.outputs.run_variants }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -72,24 +76,55 @@ jobs:
           compiler: ${{ inputs.compiler }}
           mpi: ${{ inputs.mpi }}
 
-      - name: Build matrices
-        id: matrix
+      - name: Parse variants
+        id: variants
         shell: bash
+        env:
+          VARIANTS_JSON: ${{ inputs.variants }}
+          DEF_RES: ${{ inputs.resolution }}
+          DEF_DUR: ${{ inputs.run-duration }}
+          REF_IDX: ${{ inputs.reference_index }}
         run: |
-          IO_JSON=$(jq -nc --arg s '${{ inputs.io-libs }}' '($s | split(",") | map(gsub("^\\s+|\\s+$";"")))')
-          RANKS_JSON=$(jq -nc --arg s '${{ inputs.rank-counts }}' '($s | split(",") | map(gsub("^\\s+|\\s+$";"")) | map(tonumber))')
-          echo "io=${IO_JSON}" >> "$GITHUB_OUTPUT"
-          echo "ranks=${RANKS_JSON}" >> "$GITHUB_OUTPUT"
-          echo "IO matrix:    ${IO_JSON}"
-          echo "Ranks matrix: ${RANKS_JSON}"
+          set -euo pipefail
+          RI="${REF_IDX:-0}"
+          echo "${VARIANTS_JSON}" | jq -e 'type == "array" and length >= 2' >/dev/null \
+            || { echo "::error::variants must be a JSON array with at least two entries"; exit 1; }
+          echo "${VARIANTS_JSON}" | jq -e 'all(.[]; has("id") and has("ranks"))' >/dev/null \
+            || { echo "::error::each variant must include id and ranks"; exit 1; }
+          echo "${VARIANTS_JSON}" | jq -e 'all(.[]; .id | test("^[a-zA-Z0-9._-]+$"))' >/dev/null \
+            || { echo "::error::variant id must match ^[a-zA-Z0-9._-]+$"; exit 1; }
+          N=$(echo "${VARIANTS_JSON}" | jq 'length')
+          if [ "${RI}" -lt 0 ] || [ "${RI}" -ge "${N}" ]; then
+            echo "::error::reference_index must be between 0 and $((N - 1))"
+            exit 1
+          fi
+
+          BUILD_TAGS=$(echo "${VARIANTS_JSON}" | jq -c \
+            '[.[] | (if (.use_pio // false) then "pio" else "smiol" end)] | unique')
+          RUN_VARIANTS=$(echo "${VARIANTS_JSON}" | jq -c \
+            --arg defres "${DEF_RES}" \
+            --arg defdur "${DEF_DUR}" \
+            '[.[] | {
+              id,
+              build_tag: (if (.use_pio // false) then "pio" else "smiol" end),
+              ranks: (.ranks | tonumber),
+              resolution: (.resolution // $defres),
+              run_duration: (.run_duration // $defdur),
+              label: (.label // .id)
+            }]')
+
+          echo "build_tags=${BUILD_TAGS}" >> "$GITHUB_OUTPUT"
+          echo "run_variants=${RUN_VARIANTS}" >> "$GITHUB_OUTPUT"
+          echo "Build matrix (unique I/O builds): ${BUILD_TAGS}"
+          echo "Run matrix: ${RUN_VARIANTS}"
 
   build:
     needs: config
     strategy:
       fail-fast: true
       matrix:
-        io: ${{ fromJSON(needs.config.outputs.io) }}
-    name: Build (${{ matrix.io }})
+        build_tag: ${{ fromJSON(needs.config.outputs.build_tags) }}
+    name: Build (${{ matrix.build_tag }})
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.config.outputs.image }}
@@ -102,13 +137,13 @@ jobs:
         uses: ./.github/actions/build-mpas
         with:
           compiler: ${{ inputs.compiler }}
-          use-pio: ${{ matrix.io == 'pio' && 'true' || 'false' }}
+          use-pio: ${{ matrix.build_tag == 'pio' && 'true' || 'false' }}
           precision: ${{ inputs.precision }}
 
       - name: Upload executable
         uses: actions/upload-artifact@v6
         with:
-          name: exe-bfb-${{ matrix.io }}
+          name: exe-bfb-${{ matrix.build_tag }}
           path: atmosphere_model
           retention-days: 1
 
@@ -117,9 +152,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        io: ${{ fromJSON(needs.config.outputs.io) }}
-        ranks: ${{ fromJSON(needs.config.outputs.ranks) }}
-    name: Run (${{ matrix.io }}, ${{ matrix.ranks }} ranks)
+        include: ${{ fromJSON(needs.config.outputs.run_variants) }}
+    name: Run (${{ matrix.id }})
     runs-on: ubuntu-latest
     container:
       image: ${{ needs.config.outputs.image }}
@@ -129,25 +163,25 @@ jobs:
       - name: Download executable
         uses: actions/download-artifact@v7
         with:
-          name: exe-bfb-${{ matrix.io }}
+          name: exe-bfb-${{ matrix.build_tag }}
 
       - name: Run MPAS-A
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
           num-procs: '${{ matrix.ranks }}'
-          resolution: ${{ inputs.resolution }}
-          run-duration: ${{ inputs.run-duration }}
+          resolution: ${{ matrix.resolution }}
+          run-duration: ${{ matrix.run_duration }}
           run-timeout: ${{ inputs.run-timeout }}
           mpi-impl: ${{ inputs.mpi }}
-          working-dir: run-${{ matrix.io }}-${{ matrix.ranks }}
+          working-dir: run-${{ matrix.id }}
           strict-exit-check: 'false'
 
       - name: Upload history output
         uses: actions/upload-artifact@v6
         with:
-          name: bfb-history-${{ matrix.io }}-${{ matrix.ranks }}
-          path: run-${{ matrix.io }}-${{ matrix.ranks }}/history.*.nc
+          name: bfb-history-${{ matrix.id }}
+          path: run-${{ matrix.id }}/history.*.nc
           retention-days: 1
 
   compare:
@@ -169,38 +203,46 @@ jobs:
 
       - name: Compare outputs
         env:
-          IO_LIBS: ${{ inputs.io-libs }}
-          RANK_COUNTS: ${{ inputs.rank-counts }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+          REFERENCE_INDEX: ${{ inputs.reference_index }}
         shell: bash
         run: |
           pip install --quiet netCDF4 numpy
 
-          IFS=',' read -ra IO_ARR <<< "${IO_LIBS}"
-          IFS=',' read -ra RANK_ARR <<< "${RANK_COUNTS}"
-          for i in "${!IO_ARR[@]}"; do IO_ARR[$i]=$(echo "${IO_ARR[$i]}" | tr -d '[:space:]'); done
-          for i in "${!RANK_ARR[@]}"; do RANK_ARR[$i]=$(echo "${RANK_ARR[$i]}" | tr -d '[:space:]'); done
+          RI="${REFERENCE_INDEX:-0}"
 
-          REF_IO="${IO_ARR[0]}"
-          REF_RANKS="${RANK_ARR[0]}"
+          MERGED=$(echo "${VARIANTS_JSON}" | jq -c \
+            --arg defres "${{ inputs.resolution }}" \
+            --arg defdur "${{ inputs.run-duration }}" \
+            '[.[] | {
+              id,
+              build_tag: (if (.use_pio // false) then "pio" else "smiol" end),
+              ranks: (.ranks | tonumber),
+              resolution: (.resolution // $defres),
+              run_duration: (.run_duration // $defdur),
+              label: (.label // .id)
+            }]')
+
+          REF_ID=$(echo "${MERGED}" | jq -r --argjson idx "${RI}" '.[$idx].id')
+          REF_LABEL=$(echo "${MERGED}" | jq -r --argjson idx "${RI}" '.[$idx].label')
 
           echo "## Bit-for-Bit Comparison" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reference variant: **${REF_LABEL}** (\`${REF_ID}\`)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           PASS=0
           FAIL=0
           ERRORS=""
 
-          REF_DIR="bfb-results/bfb-history-${REF_IO}-${REF_RANKS}"
+          REF_DIR="bfb-results/bfb-history-${REF_ID}"
           REF_FILE=$(ls ${REF_DIR}/history.*.nc 2>/dev/null | head -1)
           if [ -z "${REF_FILE}" ]; then
             echo "::error::Reference history file not found in ${REF_DIR}"
-            echo "Available artifacts:"
             find bfb-results -name '*.nc' -type f
             exit 1
           fi
-          echo "Reference: ${REF_FILE} (${REF_IO} / ${REF_RANKS} rank(s))"
-          echo "Reference: \`${REF_IO} / ${REF_RANKS} rank(s)\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reference file: ${REF_FILE}"
 
           compare_files() {
             local label="$1"
@@ -214,7 +256,6 @@ jobs:
               return
             fi
 
-            # NetCDF byte-for-byte identity (optional fast path).
             if cmp -s "${ref_file}" "${test_file}"; then
               echo "${label}: byte-identical"
               echo "- **${label}**: :white_check_mark: byte-identical" >> "$GITHUB_STEP_SUMMARY"
@@ -222,8 +263,6 @@ jobs:
               return
             fi
 
-            # PIO vs SMIOL and different rank counts often change file metadata / encoding
-            # while history variables remain bitwise identical — compare data only.
             RESULT=$(python3 "${GITHUB_WORKSPACE}/.github/scripts/compare-bfb-nc.py" "${ref_file}" "${test_file}")
             STATUS=$?
             IFS=$'\t' read -r CODE DETAIL <<< "${RESULT}"
@@ -239,15 +278,16 @@ jobs:
             fi
           }
 
-          for io in "${IO_ARR[@]}"; do
-            for ranks in "${RANK_ARR[@]}"; do
-              if [ "${io}" = "${REF_IO}" ] && [ "${ranks}" = "${REF_RANKS}" ]; then
-                continue
-              fi
-              DIR="bfb-results/bfb-history-${io}-${ranks}"
-              TEST_FILE=$(ls ${DIR}/history.*.nc 2>/dev/null | head -1)
-              compare_files "${io} / ${ranks} rank(s)" "${TEST_FILE}" "${REF_FILE}"
-            done
+          N=$(echo "${MERGED}" | jq 'length')
+          for ((i = 0; i < N; i++)); do
+            VID=$(echo "${MERGED}" | jq -r --argjson idx "$i" '.[$idx].id')
+            if [ "${VID}" = "${REF_ID}" ]; then
+              continue
+            fi
+            VLABEL=$(echo "${MERGED}" | jq -r --argjson idx "$i" '.[$idx].label')
+            DIR="bfb-results/bfb-history-${VID}"
+            TEST_FILE=$(ls ${DIR}/history.*.nc 2>/dev/null | head -1)
+            compare_files "${VLABEL} (\`${VID}\`)" "${TEST_FILE}" "${REF_FILE}"
           done
 
           echo "" >> "$GITHUB_STEP_SUMMARY"

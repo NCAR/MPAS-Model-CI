@@ -1,5 +1,5 @@
-# Bit-for-bit: MPI decomposition (1 vs 4 ranks), SMIOL only.
-# Uses reusable _test-bfb; reference = 1 rank vs 4 ranks.
+# Example BFB caller: same I/O build, different MPI rank counts (decomposition).
+# Add new scenarios by copying this file and changing `variants` (see AGENT_GUIDE.md).
 
 name: "BFB: Decomposition (1 vs 4 ranks)"
 
@@ -14,5 +14,6 @@ jobs:
     with:
       compiler: gcc
       mpi: mpich
-      io-libs: 'smiol'
-      rank-counts: '1,4'
+      variants: >-
+        [{"id":"r1","ranks":1,"label":"1 rank"},
+         {"id":"r4","ranks":4,"label":"4 ranks"}]

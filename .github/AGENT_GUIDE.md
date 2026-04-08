@@ -113,7 +113,24 @@ Key settings:
 - `RELEASE_ECT` — release tag for ECT data (summary + restart), pinned to MPAS-Dev version
 - `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
 - `PYCECT_TAG` — PyCECT git tag for `validate-ect`
-- `BFB_*` — bit-for-bit tests (`feature-ci-bfb`, workflows `bfb-io.yml`, `bfb-decomp.yml`, `_test-bfb.yml`)
+- `BFB_*` — default resolution, duration, and run timeout for bit-for-bit workflows; per-variant overrides live in the `variants` JSON passed to `_test-bfb.yml`
+
+### Bit-for-bit (`_test-bfb.yml`)
+
+The reusable workflow `_test-bfb.yml` takes a **`variants`** input: a JSON **array** of at least two objects. Each object describes one model run:
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `id` | yes | Unique slug (letters, digits, `.`, `_`, `-`); used for artifacts and working directories |
+| `ranks` | yes | MPI process count for that run |
+| `use_pio` | no | If true, build/link PIO for that variant’s build profile (default false = SMIOL) |
+| `label` | no | Short description for logs and the compare summary (defaults to `id`) |
+| `resolution` | no | Test case resolution for that run only (defaults to workflow `resolution` / `BFB_RESOLUTION`) |
+| `run_duration` | no | `config_run_duration` for that run only (defaults to workflow `run-duration` / `BFB_RUN_DURATION`) |
+
+Variants that share the same `use_pio` value reuse one compiled executable. The variant at **`reference_index`** (default **0**) is the reference; every other variant’s history file is compared to it (variable data, not raw file bytes — see `.github/scripts/compare-bfb-nc.py`).
+
+**Adding a new BFB test:** copy `bfb-io.yml` or `bfb-decomp.yml`, set `name` and `on`, and edit **`variants`**. MPI rank count and PIO vs SMIOL are common examples only; any future per-run knob exposed on `variants` and implemented in `_test-bfb.yml` / composite actions can be combined the same way.
 
 ## Container Environment
 
