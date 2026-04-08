@@ -3,6 +3,8 @@ MPAS-v8.3.1
 
 ## CI Status
 
+### ECT (PyCECT)
+
 MPICH subsets run on every push and PR. OpenMPI and GPU subsets are available via manual dispatch.
 Each test builds in double precision, runs 3 perturbed ensemble members (4 MPI ranks), and validates with [PyCECT](https://github.com/NCAR/PyCECT).
 
@@ -16,13 +18,21 @@ Each test builds in double precision, runs 3 perturbed ensemble members (4 MPI r
 | NVHPC | OpenMPI | CPU | [![NVHPC+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-26.02` |
 | NVHPC | MPICH | GPU | [![NVHPC+MPICH (GPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml) | `hpcdev:almalinux9-nvhpc-mpich-cuda-26.02` |
 | NVHPC | OpenMPI | GPU | [![NVHPC+OpenMPI (GPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-cuda-26.02` |
-| | | | | |
-| Coverage | | | [![Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) | |
 
 \* Intel pinned to `hpcdev 25.09` (IFX 2025.2) to avoid an [IFX 2025.3 preprocessor regression](.github/ci-config.env).
 
-Container images are from [ncarcisl/hpcdev](https://hub.docker.com/r/ncarcisl/hpcdev-x86_64).
+ECT subset container images are from [ncarcisl/hpcdev](https://hub.docker.com/r/ncarcisl/hpcdev-x86_64).
 Image tags, compiler mappings, and MPI flags are configured in [`.github/ci-config.env`](.github/ci-config.env).
+
+### Bit-for-bit and coverage
+
+Bit-for-bit workflows compare history output in single precision (240km case; see `BFB_*` in [`.github/ci-config.env`](.github/ci-config.env)). They run on `workflow_dispatch` and on pushes to `feature-ci-bfb`.
+
+| Test | Status |
+|------|--------|
+| BFB: I/O (SMIOL vs PIO) | [![BFB: I/O (SMIOL vs PIO)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-io.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-io.yml) |
+| BFB: Decomposition (1 vs 4 ranks) | [![BFB: Decomposition (1 vs 4 ranks)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-decomp.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-decomp.yml) |
+| Code coverage | [![Code Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) |
 
 The Model for Prediction Across Scales (MPAS) is a collaborative project for
 developing atmosphere, ocean, and other earth-system simulation components for
