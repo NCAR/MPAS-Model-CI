@@ -1918,7 +1918,7 @@ module atm_time_integration
       type (mpas_pool_type), pointer :: diag_physics
       type (mpas_pool_type), pointer :: mesh
       type (mpas_pool_type), pointer :: tend
-      type (mpas_pool_type), pointer :: tend_physics => null()
+      type (mpas_pool_type), pointer :: tend_physics
       type (mpas_pool_type), pointer :: lbc  ! regional_MPAS addition
 
       real (kind=RKIND), dimension(:,:), pointer :: w
