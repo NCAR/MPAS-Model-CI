@@ -5800,7 +5800,7 @@ module atm_time_integration
       type (mpas_pool_type), intent(in) :: state
       type (mpas_pool_type), intent(in) :: diag
       type (mpas_pool_type), intent(in) :: mesh
-      type (mpas_pool_type), intent(in) :: diag_physics
+      type (mpas_pool_type), pointer, intent(in) :: diag_physics
       type (mpas_pool_type), intent(in) :: configs
       integer, intent(in) :: nVertLevels              ! for allocating stack variables
       integer, intent(in) :: rk_step, dynamics_substep
