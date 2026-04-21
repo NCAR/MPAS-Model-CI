@@ -5796,7 +5796,7 @@ module atm_time_integration
       ! Dummy arguments
       !
       type (mpas_pool_type), intent(inout) :: tend
-      type (mpas_pool_type), pointer :: tend_physics
+      type (mpas_pool_type), pointer, intent(in) :: tend_physics
       type (mpas_pool_type), intent(in) :: state
       type (mpas_pool_type), intent(in) :: diag
       type (mpas_pool_type), intent(in) :: mesh
