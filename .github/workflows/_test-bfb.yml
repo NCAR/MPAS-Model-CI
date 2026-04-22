@@ -4,7 +4,9 @@
 # produce bitwise-identical history variable data. The first variant (or
 # reference_index) is the reference; every other variant is compared against it.
 #
-# Optional input `gpu: 'true'`: CUDA container, OpenACC build, CIRRUS runners (nvhpc only).
+# Optional input `gpu: 'true'`: all variants use CUDA image + OpenACC + CIRRUS (nvhpc only).
+# Alternatively set `gpu: 'false'` and add per-variant `"openacc": true|false` to mix
+# CPU (GitHub-hosted) and GPU (CIRRUS) NVHPC builds in one comparison.
 #
 # MPI rank count and PIO vs SMIOL are common dimensions but not special — add any
 # new scenario by appending another variant object (and a small caller workflow).
@@ -29,8 +31,8 @@ on:
       variants:
         description: >
           JSON array of at least two variant objects. Required per variant: id (unique slug),
-          ranks (MPI processes). Optional: use_pio (default false), label (summary text),
-          resolution, run_duration (override workflow defaults for that variant only).
+          ranks (MPI processes). Optional: use_pio (default false), openacc (default follows gpu input),
+          label (summary text), resolution, run_duration (override workflow defaults for that variant only).
         required: true
         type: string
       resolution:
@@ -69,9 +71,8 @@ jobs:
     name: Resolve Config
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.container.outputs.image }}
-      build_tags: ${{ steps.variants.outputs.build_tags }}
-      run_variants: ${{ steps.variants.outputs.run_variants }}
+      build_matrix: ${{ steps.matrices.outputs.build_matrix }}
+      run_variants: ${{ steps.matrices.outputs.run_variants }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -87,20 +88,11 @@ jobs:
             exit 1
           fi
 
-      - uses: ./.github/actions/resolve-container
-        id: container
-        with:
-          compiler: ${{ inputs.compiler }}
-          mpi: ${{ inputs.mpi }}
-          gpu: ${{ inputs.gpu == 'true' && 'cuda' || '' }}
-
       - name: Parse variants
-        id: variants
+        id: parse
         shell: bash
         env:
           VARIANTS_JSON: ${{ inputs.variants }}
-          DEF_RES: ${{ inputs.resolution }}
-          DEF_DUR: ${{ inputs.run-duration }}
           REF_IDX: ${{ inputs.reference_index }}
         run: |
           set -euo pipefail
@@ -117,23 +109,106 @@ jobs:
             exit 1
           fi
 
-          BUILD_TAGS=$(echo "${VARIANTS_JSON}" | jq -c \
-            '[.[] | (if (.use_pio // false) then "pio" else "smiol" end)] | unique')
-          RUN_VARIANTS=$(echo "${VARIANTS_JSON}" | jq -c \
-            --arg defres "${DEF_RES}" \
-            --arg defdur "${DEF_DUR}" \
-            '[.[] | {
-              id,
-              build_tag: (if (.use_pio // false) then "pio" else "smiol" end),
-              ranks: (.ranks | tonumber),
-              resolution: (.resolution // $defres),
-              run_duration: (.run_duration // $defdur),
-              label: (.label // .id)
-            }]')
+          GDEF_JSON='false'
+          [ "${{ inputs.gpu }}" = "true" ] && GDEF_JSON='true'
+          NEED_CUDA=$(echo "${VARIANTS_JSON}" | jq -r --argjson gdef "${GDEF_JSON}" 'any(.[]; (.openacc // $gdef))')
+          echo "need_cuda=${NEED_CUDA}" >> "$GITHUB_OUTPUT"
 
-          echo "build_tags=${BUILD_TAGS}" >> "$GITHUB_OUTPUT"
+      - name: Require nvhpc for OpenACC variants
+        if: ${{ steps.parse.outputs.need_cuda == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.compiler }}" != "nvhpc" ]; then
+            echo "::error::OpenACC variants require compiler=nvhpc (got ${{ inputs.compiler }})"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/resolve-container
+        id: container_cpu
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+          gpu: ''
+
+      - uses: ./.github/actions/resolve-container
+        id: container_cuda
+        if: ${{ steps.parse.outputs.need_cuda == 'true' }}
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+          gpu: cuda
+
+      - name: Compute build and run matrices
+        id: matrices
+        shell: bash
+        env:
+          VARIANTS_JSON: ${{ inputs.variants }}
+          DEF_RES: ${{ inputs.resolution }}
+          DEF_DUR: ${{ inputs.run-duration }}
+          CPU_IMG: ${{ steps.container_cpu.outputs.image }}
+          CUDA_IMG: ${{ steps.container_cuda.outputs.image }}
+        run: |
+          set -euo pipefail
+          GDEF_JSON='false'
+          [ "${{ inputs.gpu }}" = "true" ] && GDEF_JSON='true'
+
+          if [ "${{ steps.parse.outputs.need_cuda }}" = "true" ] && [ -z "${CUDA_IMG}" ]; then
+            echo "::error::CUDA container image missing but OpenACC variants are present"
+            exit 1
+          fi
+
+          MIXED=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
+            '([.[] | (.openacc // $gdef)] | unique | length) > 1')
+
+          BUILD_MATRIX=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
+            --argjson mixed "${MIXED}" --arg cpuimg "${CPU_IMG}" --arg cudaimg "${CUDA_IMG}" '
+            [.[] | {
+              build_tag: (if (.use_pio // false) then "pio" else "smiol" end),
+              openacc: (.openacc // $gdef)
+            }]
+            | unique_by("\(.build_tag)-\(.openacc)")
+            | map(. + {
+                image: (if .openacc then $cudaimg else $cpuimg end),
+                artifact_name: (
+                  if $mixed then
+                    ("exe-bfb-" + .build_tag + "-" + (if .openacc then "openacc" else "cpu" end))
+                  else
+                    ("exe-bfb-" + .build_tag)
+                  end
+                )
+              })
+          ')
+
+          RUN_VARIANTS=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
+            --argjson mixed "${MIXED}" --arg cpuimg "${CPU_IMG}" --arg cudaimg "${CUDA_IMG}" \
+            --arg defres "${DEF_RES}" --arg defdur "${DEF_DUR}" \
+            '[.[] |
+              (if (.use_pio // false) then "pio" else "smiol" end) as $bt |
+              (.openacc // $gdef) as $oa |
+              {
+                id,
+                build_tag: $bt,
+                openacc: $oa,
+                ranks: (.ranks | tonumber),
+                resolution: (.resolution // $defres),
+                run_duration: (.run_duration // $defdur),
+                label: (.label // .id),
+                image: (if $oa then $cudaimg else $cpuimg end),
+                artifact_name: (
+                  if $mixed then
+                    ("exe-bfb-" + $bt + "-" + (if $oa then "openacc" else "cpu" end))
+                  else
+                    ("exe-bfb-" + $bt)
+                  end
+                )
+              }
+            ]')
+
+          echo "build_matrix=${BUILD_MATRIX}" >> "$GITHUB_OUTPUT"
           echo "run_variants=${RUN_VARIANTS}" >> "$GITHUB_OUTPUT"
-          echo "Build matrix (unique I/O builds): ${BUILD_TAGS}"
+          echo "mixed_openacc_modes=${MIXED}" >> "$GITHUB_OUTPUT"
+          echo "Build matrix: ${BUILD_MATRIX}"
           echo "Run matrix: ${RUN_VARIANTS}"
 
   build:
@@ -141,11 +216,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        build_tag: ${{ fromJSON(needs.config.outputs.build_tags) }}
-    name: Build (${{ matrix.build_tag }})
-    runs-on: ${{ inputs.gpu == 'true' && fromJSON('{"group":"CIRRUS-4x8-gpu"}') || 'ubuntu-latest' }}
+        include: ${{ fromJSON(needs.config.outputs.build_matrix) }}
+    name: Build (${{ matrix.build_tag }}, ${{ matrix.openacc && 'openacc' || 'cpu' }})
+    runs-on: ${{ matrix.openacc && fromJSON('{"group":"CIRRUS-4x8-gpu"}') || 'ubuntu-latest' }}
     container:
-      image: ${{ needs.config.outputs.image }}
+      image: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -156,13 +231,13 @@ jobs:
         with:
           compiler: ${{ inputs.compiler }}
           use-pio: ${{ matrix.build_tag == 'pio' && 'true' || 'false' }}
-          openacc: ${{ inputs.gpu == 'true' && 'true' || 'false' }}
+          openacc: ${{ matrix.openacc && 'true' || 'false' }}
           precision: ${{ inputs.precision }}
 
       - name: Upload executable
         uses: actions/upload-artifact@v6
         with:
-          name: exe-bfb-${{ matrix.build_tag }}
+          name: ${{ matrix.artifact_name }}
           path: atmosphere_model
           retention-days: 1
 
@@ -173,19 +248,19 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.config.outputs.run_variants) }}
     name: Run (${{ matrix.id }})
-    runs-on: ${{ inputs.gpu == 'true' && fromJSON('{"group":"CIRRUS-4x8-gpu"}') || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.openacc && fromJSON('{"group":"CIRRUS-4x8-gpu"}') || 'ubuntu-latest' }}
     container:
-      image: ${{ needs.config.outputs.image }}
+      image: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Download executable
         uses: actions/download-artifact@v7
         with:
-          name: exe-bfb-${{ matrix.build_tag }}
+          name: ${{ matrix.artifact_name }}
 
       - name: Check GPU availability
-        if: ${{ inputs.gpu == 'true' }}
+        if: ${{ matrix.openacc }}
         run: |
           echo "=== GPU Information ==="
           nvidia-smi || echo "WARNING: nvidia-smi failed"

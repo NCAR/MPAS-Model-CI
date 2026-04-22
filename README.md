@@ -31,7 +31,7 @@ Thanks to Teo Price-Broncucia and Allison Baker for their help on ensemble consi
 
 ### Additional testing 
 
-Bit-for-bit (BFB) workflows compare history output in single precision for CPU runs (240km case; see the BFB section in [`.github/ci-config.env`](.github/ci-config.env)). They run on **`workflow_dispatch`**, and CPU BFB callers also run on push to **`hackathon-*`**, **`hackathon`**, **`hackathon/**`**, or legacy **`feature-ci-bfb`**. **GPU BFB** workflows (`bfb-io-gpu`, `bfb-decomp-gpu`) use NVHPC + CUDA + OpenACC, double precision, CIRRUS runners, and only `workflow_dispatch` — same policy as the GPU ECT subset.
+Bit-for-bit (BFB) workflows compare history output in single precision for CPU runs (240km case; see the BFB section in [`.github/ci-config.env`](.github/ci-config.env)). They run on **`workflow_dispatch`**, and CPU BFB callers also run on push to **`hackathon-*`**, **`hackathon`**, **`hackathon/**`**, or legacy **`feature-ci-bfb`**. **GPU BFB** workflows (`bfb-io-gpu`, `bfb-decomp-gpu`, `bfb-nvhpc-cpu-vs-gpu`) use NVHPC + CUDA + OpenACC where applicable, double precision for GPU-side callers, CIRRUS for OpenACC build/run, and only `workflow_dispatch` — same policy as the GPU ECT subset.
 
 | Test | Status |
 |------|--------|
@@ -39,6 +39,7 @@ Bit-for-bit (BFB) workflows compare history output in single precision for CPU r
 | BFB: Decomposition (1 vs 4 ranks) | [![BFB: Decomposition (1 vs 4 ranks)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-decomp.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-decomp.yml) |
 | BFB: I/O GPU (SMIOL vs PIO) | [![BFB: I/O GPU (SMIOL vs PIO)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-io-gpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-io-gpu.yml) |
 | BFB: Decomposition GPU (1 vs 4 ranks) | [![BFB: Decomposition GPU (1 vs 4 ranks)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-decomp-gpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-decomp-gpu.yml) |
+| BFB: NVHPC CPU vs GPU | [![BFB: NVHPC CPU vs GPU](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-nvhpc-cpu-vs-gpu.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/bfb-nvhpc-cpu-vs-gpu.yml) |
 | Code coverage | [![Code Coverage](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/coverage.yml) [![codecov](https://codecov.io/gh/NCAR/MPAS-Model-CI/graph/badge.svg)](https://codecov.io/gh/NCAR/MPAS-Model-CI) |
 
 Container images are from [ncarcisl/hpcdev](https://hub.docker.com/r/ncarcisl/hpcdev-x86_64).

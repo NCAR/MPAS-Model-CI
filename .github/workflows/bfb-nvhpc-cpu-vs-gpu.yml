@@ -1,0 +1,23 @@
+# BFB: NVHPC without OpenACC (GitHub-hosted) vs NVHPC + OpenACC (CIRRUS GPU).
+# Same MPI, rank count, resolution, and double precision — compares history variable
+# data bitwise. CPU vs GPU OpenACC often differs; this workflow makes that visible.
+#
+# workflow_dispatch only (CIRRUS + mixed runners).
+
+name: "BFB: NVHPC CPU vs GPU (OpenACC)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-bfb.yml
+    with:
+      compiler: nvhpc
+      mpi: mpich
+      gpu: 'false'
+      precision: double
+      run-timeout: '20'
+      variants: >-
+        [{"id":"cpu","ranks":4,"openacc":false,"label":"NVHPC CPU (no OpenACC)"},
+         {"id":"gpu","ranks":4,"openacc":true,"label":"NVHPC GPU (OpenACC)"}]

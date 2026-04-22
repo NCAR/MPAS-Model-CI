@@ -137,15 +137,16 @@ The reusable workflow `_test-bfb.yml` takes a **`variants`** input: a JSON **arr
 | `id` | yes | Unique slug (letters, digits, `.`, `_`, `-`); used for artifacts and working directories |
 | `ranks` | yes | MPI process count for that run |
 | `use_pio` | no | If true, build/link PIO for that variant’s build profile (default false = SMIOL) |
+| `openacc` | no | Per-variant OpenACC + CUDA/CIRRUS vs CPU/GitHub-hosted; omitted variants use workflow **`gpu`** input (`true` = all GPU, `false` = all CPU). Set **`gpu: 'false'`** and explicit **`openacc`** on each variant to mix NVHPC CPU and GPU (**`bfb-nvhpc-cpu-vs-gpu.yml`**) |
 | `label` | no | Short description for logs and the compare summary (defaults to `id`) |
 | `resolution` | no | Test case resolution for that run only (defaults to workflow `resolution` / `BFB_RESOLUTION`) |
 | `run_duration` | no | `config_run_duration` for that run only (defaults to workflow `run-duration` / `BFB_RUN_DURATION`) |
 
-Variants that share the same `use_pio` value reuse one compiled executable. The variant at **`reference_index`** (default **0**) is the reference; every other variant’s history file is compared to it (variable data, not raw file bytes — see `.github/scripts/compare-bfb-nc.py`).
+Variants that share the same **`use_pio`** and **`openacc`** mode reuse one compiled executable (when both CPU and OpenACC builds exist in one workflow, artifact names gain `-cpu` / `-openacc` suffixes). The variant at **`reference_index`** (default **0**) is the reference; every other variant’s history file is compared to it (variable data, not raw file bytes — see `.github/scripts/compare-bfb-nc.py`).
 
-**GPU BFB:** set workflow input **`gpu: 'true'`** (string). `_test-bfb.yml` then resolves **`CONTAINER_IMAGE_GPU`**, builds with **`openacc: true`**, and runs build/run jobs on **`CIRRUS-4x8-gpu`**. **`compiler` must be `nvhpc`**. Precision is typically **`double`** to match `_test-gpu.yml`. Example callers: **`bfb-decomp-gpu.yml`** (1 vs 4 ranks), **`bfb-io-gpu.yml`** (SMIOL vs PIO, 4 ranks). Do **not** add `pull_request` triggers for GPU BFB — same policy as `_test-gpu.yml`.
+**GPU BFB (uniform OpenACC):** set workflow input **`gpu: 'true'`** (string). `_test-bfb.yml` uses the CUDA image, **`openacc: true`** for every variant, and **`CIRRUS-4x8-gpu`** for build/run. **`compiler` must be `nvhpc`**. Precision is typically **`double`**. Example callers: **`bfb-decomp-gpu.yml`**, **`bfb-io-gpu.yml`**. Do **not** add `pull_request` triggers for GPU BFB — same policy as `_test-gpu.yml`.
 
-**Adding a new BFB test:** copy `bfb-io.yml`, `bfb-decomp.yml`, `bfb-io-gpu.yml`, or `bfb-decomp-gpu.yml`, set `name` and `on`, and edit **`variants`** (and `gpu` / `precision` when applicable). MPI rank count and PIO vs SMIOL are common examples only; any future per-run knob exposed on `variants` and implemented in `_test-bfb.yml` / composite actions can be combined the same way.
+**Adding a new BFB test:** copy `bfb-io.yml`, `bfb-decomp.yml`, `bfb-io-gpu.yml`, `bfb-decomp-gpu.yml`, or **`bfb-nvhpc-cpu-vs-gpu.yml`**, set `name` and `on`, and edit **`variants`** (and `gpu` / `precision` / per-variant **`openacc`** when applicable). MPI rank count and PIO vs SMIOL are common examples only; any future per-run knob exposed on `variants` and implemented in `_test-bfb.yml` / composite actions can be combined the same way.
 
 ## Container Environment
 
