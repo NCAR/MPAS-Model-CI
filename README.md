@@ -46,7 +46,7 @@ Image tags, compiler mappings, and MPI flags are configured in [`.github/ci-conf
 
 ### Hackathon quick start
 
-- Use **`master`** as the base branch. Maintainer reference: [`.github/AGENT_GUIDE.md`](.github/AGENT_GUIDE.md).
+- Use **`master`** as the base branch. Shared CI settings and container tags are in [`.github/ci-config.env`](.github/ci-config.env); reusable workflows live under [`.github/workflows/`](.github/workflows/).
 - **Fork → branch → PR** into [`NCAR/MPAS-Model-CI`](https://github.com/NCAR/MPAS-Model-CI) with base **`master`** (not the upstream `MPAS-Dev/MPAS-Model` fork unless that is intentional).
 - **Test another MPAS fork or commit:** Actions → **Cross-Repo Test** or use **`workflow_dispatch`** on **Ensemble Consistency Test (ECT)**, **coverage**, or **ect-ensemble-gen** with `mpas-repository` / `mpas-ref`. Details: [`.github/docs/testing-upstream-commits.md`](.github/docs/testing-upstream-commits.md).
 - **GPU ECT** (`test-gpu-mpich` / `test-gpu-openmpi`) is **`workflow_dispatch` only** (CIRRUS self-hosted — not tied to `hackathon-*` pushes). **GPU BFB** and **Nsight profiling** are also **manual dispatch**; coordinate with maintainers as needed.

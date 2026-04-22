@@ -1,5 +1,5 @@
 # Example BFB caller: same I/O build, different MPI rank counts (decomposition).
-# Add new scenarios by copying this file and changing `variants` (see AGENT_GUIDE.md).
+# Add new scenarios by copying this file and editing `variants` (see `_test-bfb.yml` and `.github/ci-config.env` BFB_*).
 
 name: "BFB: Decomposition (1 vs 4 ranks)"
 

@@ -177,7 +177,7 @@ Adding a new test case or resolution = new config directory, no workflow changes
   - CI/CD page auto-generated from actual workflow files
   - Generator script (`generate_ci_docs.py`) ensures docs never drift
     from implementation
-- **Agent Guide**: Internal reference for CI maintainers
+- **CI layout**: Workflows and composite actions under `.github/`, central config in `ci-config.env`
 - **Testing upstream commits**: Step-by-step guide for cross-repo testing
 
 ---

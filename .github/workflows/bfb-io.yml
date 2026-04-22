@@ -1,5 +1,5 @@
 # Example BFB caller: two I/O builds (SMIOL vs PIO), same rank count.
-# Add new scenarios by copying this file and changing `variants` (see AGENT_GUIDE.md).
+# Add new scenarios by copying this file and editing `variants` (see `_test-bfb.yml` and `.github/ci-config.env` BFB_*).
 
 name: "BFB: I/O (SMIOL vs PIO)"
 
