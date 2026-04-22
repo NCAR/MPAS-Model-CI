@@ -67,7 +67,7 @@ Current tags: `testdata-240km-v1`, `testdata-120km-v1`, `ect-summary-v1`, `ect-r
 
 - **`master`** — default branch, mirrors upstream MPAS-Model. Workflow files must exist here for the `workflow_dispatch` UI button to appear.
 - **`develop`** — upstream develop branch.
-- **Topic branches** — fork from `master` for changes. Branches named **`hackathon-*`** (e.g. `hackathon-team-a`) auto-run **CPU ECT subsets** (push/PR) and **GPU ECT subsets** (push and in-repo PR; fork PRs skip GPU — see Security). CPU BFB callers also run on push to `hackathon`, `hackathon/**`, `hackathon-*`, or legacy `feature-ci-bfb`.
+- **Topic branches** — fork from `master` for changes. Branches named **`hackathon-*`** auto-run **CPU ECT subsets** (push/PR). **GPU ECT** stays **`workflow_dispatch` only** (see Security). CPU BFB callers also run on push to `hackathon`, `hackathon/**`, `hackathon-*`, or legacy `feature-ci-bfb`.
 
 ## Workflow Architecture
 
@@ -81,7 +81,7 @@ Each compiler+MPI combination has a thin caller workflow that invokes a reusable
 **MPICH callers** (`test-gcc-mpich`, `test-intel-mpich`, `test-nvhpc-mpich`) run on push/PR to `master`/`develop` and to **`hackathon-*`**.
 **compile-nvhpc-cuda-mpich** (NVHPC + OpenACC compile-only on GitHub-hosted runners) also runs on push/PR to those branches.
 **OpenMPI CPU callers** (`test-*-openmpi`) stay **`workflow_dispatch` only** (optional; OpenMPI regressions).
-**GPU ECT callers** (`test-gpu-mpich`, `test-gpu-openmpi`) run on **`push` and `pull_request` to `hackathon-*`** (PR job skipped for **fork** heads) and on `workflow_dispatch`.
+**GPU ECT callers** (`test-gpu-mpich`, `test-gpu-openmpi`) are **`workflow_dispatch` only** (self-hosted CIRRUS).
 
 ### _test-compiler.yml — Reusable CPU Workflow
 
@@ -215,7 +215,7 @@ Workflows accept `mpas-repository` and `mpas-ref` inputs for testing upstream MP
 
 ## Security
 
-- **Self-hosted runners**: GPU ECT workflows (`_test-gpu`, `test-gpu-*`) may use `pull_request` to **`hackathon-*`** only with a **non-fork guard** on the job (`pull_request.head.repo.fork == false`). **`push` to `hackathon-*`** is allowed for trusted writers. Do **not** run GPU ECT on `pull_request` to `master`/`develop` from forks. **`profile-gpu-nsight`** stays `workflow_dispatch` only.
+- **Self-hosted runners**: GPU ECT workflows (`_test-gpu`, `test-gpu-*`) use **`workflow_dispatch` only**. Do **not** add `push` or `pull_request` triggers — unreviewed code could run on CIRRUS. **`profile-gpu-nsight`** is also `workflow_dispatch` only.
 - **Secret isolation**: Test data is public release assets on this repo, so CI does not need a separate data-repo PAT for downloads.
 - **Cross-repo execution**: `workflow_dispatch` with external repo inputs runs `make` from that repo. Acceptable since only write-access users can trigger it.
 

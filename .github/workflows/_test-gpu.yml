@@ -5,9 +5,8 @@
 # validates via ECT (PyCECT) — the same statistical test used for CPU
 # subsets. GPU results are not expected to be bit-for-bit identical to CPU.
 #
-# Security: Runs on self-hosted CIRRUS runners. Callers use workflow_dispatch,
-# push to hackathon-*, and pull_request to hackathon-* with a non-fork guard —
-# never bare pull_request to master/develop (fork risk).
+# Security: Runs on self-hosted CIRRUS runners. Callers must use workflow_dispatch
+# only — never push or pull_request triggers (fork / unreviewed code risk on CIRRUS).
 
 name: _test-gpu
 

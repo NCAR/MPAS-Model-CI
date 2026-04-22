@@ -1,22 +1,15 @@
 # Subset CI: NVHPC + OpenMPI (GPU vs CPU)
 # Runs on CIRRUS self-hosted runners with GPU access.
 # Known issue: NVHPC+OpenMPI SIGABRT.
-#
-# Auto-runs on push and on pull_request to hackathon-*. For pull_request,
-# the job is skipped when the head branch is from a fork.
+# workflow_dispatch only — no push/pull_request (self-hosted security).
 
 name: "NVHPC+OpenMPI (GPU)"
 
 on:
   workflow_dispatch:
-  push:
-    branches: ['hackathon-*']
-  pull_request:
-    branches: ['hackathon-*']
 
 jobs:
   test:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false)
     uses: ./.github/workflows/_test-gpu.yml
     with:
       mpi: openmpi
