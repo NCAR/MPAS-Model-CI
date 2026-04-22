@@ -117,7 +117,7 @@ All container images, compiler mappings, MPI flags, per-asset release tags, ECT 
 
 Key settings:
 - `CONTAINER_IMAGE` / `CONTAINER_IMAGE_GPU` — image templates with `{compiler}` and `{mpi}` placeholders
-- `CONTAINER_IMAGE_{compiler}` — per-compiler overrides (Intel pinned to `hpcdev 25.09`)
+- `CONTAINER_IMAGE_{compiler}` — optional per-compiler image template overrides
 - `CONTAINER_COMPILER_{name}` — name mappings when image tags differ (e.g., `gcc` → `gcc14`)
 - `MAKE_TARGET_{compiler}` — maps CI names to Makefile targets
 - `NVHPC_EXTRA_MAKE_FLAGS` / `ONEAPI_EXTRA_MAKE_FLAGS` — compiler-specific build workarounds
@@ -152,8 +152,7 @@ Variants that share the same `use_pio` value reuse one compiled executable. The 
 All builds and runs use `ncarcisl/hpcdev-x86_64` Docker containers. Image names are resolved from `ci-config.env` templates.
 
 Current containers:
-- **GCC, NVHPC**: `hpcdev-x86_64:almalinux9-{compiler}-{mpi}-26.02`
-- **Intel**: `hpcdev-x86_64:leap-oneapi-{mpi}-25.09` (pinned to avoid IFX 2025.3 fpp regression)
+- **GCC, NVHPC, Intel (OneAPI)**: `hpcdev-x86_64:almalinux9-{compiler}-{mpi}-26.02` (`CONTAINER_COMPILER_*` mappings apply, e.g. `gcc` → `gcc14`)
 - **GPU**: `hpcdev-x86_64:almalinux9-nvhpc-{mpi}-cuda-26.02`
 
 Container facts:
@@ -221,6 +220,5 @@ Workflows accept `mpas-repository` and `mpas-ref` inputs for testing upstream MP
 
 ## Known Issues
 
-- **IFX 2025.3 fpp regression**: breaks `#define COMMA ,` pattern in 6+ framework files. Intel pinned to hpcdev 25.09 (IFX 2025.2.1). Remove override when IFX 2025.4+ is available.
 - **NVHPC+OpenMPI**: model exits 134 (SIGABRT) on GA runners with 4 ranks. MPICH works. Caller workflows and reusable CPU/GPU jobs mark this combination `continue-on-error` until resolved.
 - **NVHPC/Intel MPI F08 bindings**: broken with hpcdev MPI libraries. Both use `MPAS_MPI_F08=0` workaround.

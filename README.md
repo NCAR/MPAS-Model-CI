@@ -14,14 +14,12 @@ Thanks to Teo Price-Broncucia and Allison Baker for their help on ensemble consi
 |----------|-----|--------|--------|-----------|
 | GNU | MPICH | CPU | [![GNU+MPICH (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-mpich.yml) | `hpcdev:almalinux9-gcc14-mpich-26.02` |
 | GNU | OpenMPI | CPU | [![GNU+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gcc-openmpi.yml) | `hpcdev:almalinux9-gcc14-openmpi-26.02` |
-| Intel | MPICH | CPU | [![Intel+MPICH (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml) | `hpcdev:leap-oneapi-mpich-25.09`\* |
-| Intel | OpenMPI | CPU | [![Intel+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml) | `hpcdev:leap-oneapi-openmpi-25.09`\* |
+| Intel | MPICH | CPU | [![Intel+MPICH (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-mpich.yml) | `hpcdev:almalinux9-oneapi-mpich-26.02` |
+| Intel | OpenMPI | CPU | [![Intel+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-intel-openmpi.yml) | `hpcdev:almalinux9-oneapi-openmpi-26.02` |
 | NVHPC | MPICH | CPU | [![NVHPC+MPICH (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-mpich.yml) | `hpcdev:almalinux9-nvhpc-mpich-26.02` |
 | NVHPC | OpenMPI | CPU | [![NVHPC+OpenMPI (CPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-nvhpc-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-26.02` |
 | NVHPC | MPICH | GPU | [![NVHPC+MPICH (GPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-mpich.yml) | `hpcdev:almalinux9-nvhpc-mpich-cuda-26.02` |
 | NVHPC | OpenMPI | GPU | [![NVHPC+OpenMPI (GPU)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml/badge.svg)](https://github.com/NCAR/MPAS-Model-CI/actions/workflows/test-gpu-openmpi.yml) | `hpcdev:almalinux9-nvhpc-openmpi-cuda-26.02` |
-
-\* Intel pinned to `hpcdev 25.09` (IFX 2025.2) to avoid an IFX 2025.3 preprocessor regression. This issue has been addressed by [MPAS-Dev:develop #1392](https://github.com/MPAS-Dev/MPAS-Model/pull/1392)
 
 **Compile-only** workflows verify the NVHPC + OpenACC + CUDA toolchain by building on a Github Action runner without a GPU
 
