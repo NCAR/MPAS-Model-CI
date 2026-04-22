@@ -23,8 +23,6 @@ Thanks to Teo Price-Broncucia and Allison Baker for their help on ensemble consi
 
 \* Intel pinned to `hpcdev 25.09` (IFX 2025.2) to avoid an IFX 2025.3 preprocessor regression. This issue has been addressed by [MPAS-Dev:develop #1392](https://github.com/MPAS-Dev/MPAS-Model/pull/1392)
 
-† **NVHPC+OpenMPI** ECT is fragile (suspected OpenMPI runtime issues: CPU job may exit 134 on GA runners; GPU path is **`workflow_dispatch` only** on CIRRUS). Badges reflect the latest workflow run — use **MPICH** subsets for routine green CI.
-
 **Compile-only** workflows verify the NVHPC + OpenACC + CUDA toolchain by building on a Github Action runner without a GPU
 
 
