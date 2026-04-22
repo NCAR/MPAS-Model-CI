@@ -363,8 +363,12 @@ jobs:
               return
             fi
 
+            # compare-bfb-nc.py exits 1 on mismatch; with `set -e`, command substitution
+            # would abort before STATUS/DETAIL are handled — temporarily disable -e.
+            set +e
             RESULT=$(python3 "${GITHUB_WORKSPACE}/.github/scripts/compare-bfb-nc.py" "${ref_file}" "${test_file}")
             STATUS=$?
+            set -e
             IFS=$'\t' read -r CODE DETAIL <<< "${RESULT}"
 
             if [ "${STATUS}" -eq 0 ] && [ "${CODE}" = "OK" ]; then
