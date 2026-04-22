@@ -2,12 +2,19 @@
 # Same MPI, rank count, resolution, and double precision — compares history variable
 # data bitwise. CPU vs GPU OpenACC often differs; this workflow makes that visible.
 #
-# workflow_dispatch only (CIRRUS + mixed runners).
+# workflow_dispatch for routine use. pull_request (path-filtered) runs the same
+# workflow from the PR head so you can test before merging to master; GitHub does
+# not allow workflow_dispatch on a YAML file that only exists on a feature branch.
 
 name: "BFB: NVHPC CPU vs GPU (OpenACC)"
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/bfb-nvhpc-cpu-vs-gpu.yml'
+      - '.github/workflows/_test-bfb.yml'
 
 jobs:
   test:
