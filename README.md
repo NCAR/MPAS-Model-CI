@@ -31,7 +31,7 @@ Thanks to Teo Price-Broncucia and Allison Baker for their help on ensemble consi
 
 ### Additional testing 
 
-Bit-for-bit (BFB) workflows compare history output in single precision for CPU runs (240km case; see the BFB section in [`.github/ci-config.env`](.github/ci-config.env)). They run on **`workflow_dispatch`**, and CPU BFB callers also run on push to **`hackathon-*`**, **`hackathon`**, **`hackathon/**`**, or legacy **`feature-ci-bfb`**. **GPU BFB** workflows (`bfb-io-gpu`, `bfb-decomp-gpu`, `bfb-nvhpc-cpu-vs-gpu`) use NVHPC + CUDA + OpenACC where applicable, double precision for GPU-side callers, CIRRUS for OpenACC build/run, and only `workflow_dispatch` — same policy as the GPU ECT subset.
+Bit-for-bit (BFB) workflows compare history output in single precision for CPU runs (240km case; see the BFB section in [`.github/ci-config.env`](.github/ci-config.env)). They run on **`workflow_dispatch`**, and CPU BFB callers also run on push to **`hackathon-*`**, **`hackathon`**, **`hackathon/**`**, or legacy **`feature-ci-bfb`**. **GPU BFB** workflows use NVHPC + CUDA + OpenACC where applicable, double precision for GPU-side callers, and CIRRUS for OpenACC build/run. The `bfb-io-gpu` and `bfb-decomp-gpu` workflows are `workflow_dispatch` only, while `bfb-nvhpc-cpu-vs-gpu` currently also includes a `pull_request` trigger.
 
 | Test | Status |
 |------|--------|
