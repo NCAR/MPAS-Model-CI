@@ -3,17 +3,12 @@
 # data bitwise. CPU vs GPU OpenACC often differs; this workflow makes that visible.
 #
 # workflow_dispatch for routine use (after this file is on the default branch).
-# pull_request runs when this caller file changes on a PR to master so you can
-# exercise the reusable _test-bfb.yml from the PR head before merge.
+# GPU/OpenACC comparisons remain dispatch-only so PR code cannot run on CIRRUS.
 
 name: "BFB: NVHPC CPU vs GPU (OpenACC)"
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [master]
-    paths:
-      - '.github/workflows/bfb-nvhpc-cpu-vs-gpu.yml'
 
 jobs:
   test:
