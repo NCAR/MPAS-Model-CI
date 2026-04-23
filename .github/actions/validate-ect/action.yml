@@ -45,7 +45,6 @@ runs:
         # ECT release tag is derived from the MPAS version (passed in),
         # not stored in ci-config.env. See .github/actions/mpas-version.
         echo "summary-file=${ECT_SUMMARY_FILE}" >> $GITHUB_OUTPUT
-        echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
         echo "pycect-tag=${PYCECT_TAG}" >> $GITHUB_OUTPUT
         echo "release-tag=ect-v${{ inputs.mpas-version }}" >> $GITHUB_OUTPUT
 
@@ -94,11 +93,13 @@ runs:
       shell: bash
       run: |
         LABEL="${{ inputs.label }}"
+        # --tslice 0 is invariant: history files are pre-trimmed to a single
+        # time slice by run-perturb-mpas (trim_history.py creates Time=1).
         set +e
         python pycect/pyCECT.py \
           --sumfile ${{ steps.summary.outputs.summary-file }} \
           --indir ${{ inputs.history-dir }} \
-          --tslice ${{ steps.config.outputs.tslice }} \
+          --tslice 0 \
           --mpas \
           --verbose \
           --printStdMean \

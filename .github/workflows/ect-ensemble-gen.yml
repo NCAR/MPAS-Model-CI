@@ -299,7 +299,6 @@ jobs:
       date: ${{ steps.meta.outputs.date }}
       resolution: ${{ steps.meta.outputs.resolution }}
       ensemble-size: ${{ steps.meta.outputs.ensemble-size }}
-      tslice: ${{ steps.meta.outputs.tslice }}
       compiler: ${{ steps.meta.outputs.compiler }}
       mpi-impl: ${{ steps.meta.outputs.mpi-impl }}
       precision: ${{ steps.meta.outputs.precision }}
@@ -339,7 +338,6 @@ jobs:
           echo "ensemble-size=${{ needs.prepare.outputs.ensemble-size }}" >> $GITHUB_OUTPUT
           echo "summary-prefix=${ECT_SUMMARY_PREFIX}" >> $GITHUB_OUTPUT
           echo "summary-name=${SUMMARY_NAME}" >> $GITHUB_OUTPUT
-          echo "tslice=${ECT_TSLICE}" >> $GITHUB_OUTPUT
           echo "compiler=${{ inputs.compiler || 'nvhpc' }}" >> $GITHUB_OUTPUT
           echo "mpi-impl=${{ inputs.mpi-impl || 'mpich' }}" >> $GITHUB_OUTPUT
           echo "precision=double" >> $GITHUB_OUTPUT
@@ -399,7 +397,6 @@ jobs:
       - name: Generate ensemble summary
         run: |
           SUMMARY_NAME="${{ steps.meta.outputs.summary-name }}"
-          TSLICE="${{ steps.meta.outputs.tslice }}"
           ESIZE=${{ needs.prepare.outputs.ensemble-size }}
           NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
           if [ "${NFILES}" -lt "${ESIZE}" ]; then
@@ -410,11 +407,13 @@ jobs:
           JSONFILE=ect_pycect_exclude.json
           echo '{"ExcludedVar": []}' > "${JSONFILE}"
 
+          # --tslice 0 is invariant: ensemble files are pre-trimmed to a single
+          # time slice by run-perturb-mpas (trim_history.py creates Time=1).
           python pycect/pyEnsSumMPAS.py \
             --esize ${ESIZE} \
             --indir ensemble-files \
             --sumfile "${SUMMARY_NAME}" \
-            --tslice ${TSLICE} \
+            --tslice 0 \
             --tag $(date +%Y%m%d) \
             --model mpas \
             --mach github-actions \
