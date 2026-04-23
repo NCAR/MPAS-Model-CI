@@ -57,7 +57,7 @@ tests/                           # pFUnit test infrastructure (repo root)
 
 Test case archives, ECT ensemble summary files, and ECT spin-up restarts are stored as **GitHub release assets on this repository** (`NCAR/MPAS-Model-CI`). Each asset is versioned by its own release tag (independent of the others).
 
-Current tags: `testdata-240km-v1`, `testdata-120km-v1`, `ect-summary-v1`, `ect-restart-v1` (see `RELEASE_*` variables in `ci-config.env`).
+Current tags: `testdata-240km-v1`, `testdata-120km-v1` (see `RELEASE_TESTDATA_*` in `ci-config.env`), plus `ect-v{MPAS_VERSION}` for ECT data — its tag is derived at runtime from `src/core_atmosphere/Registry.xml` via the `mpas-version` composite action, not from `ci-config.env`.
 
 **Adding a new test case:** build the archive (`{resolution}.tar.gz`), create a release (`gh release create … --repo NCAR/MPAS-Model-CI`), attach the asset, then set `RELEASE_TESTDATA_{RES}` in `ci-config.env` (resolution uppercased with `-` → `_` in the variable name, e.g. `120KM`).
 
@@ -123,8 +123,8 @@ Key settings:
 - `NVHPC_EXTRA_MAKE_FLAGS` / `ONEAPI_EXTRA_MAKE_FLAGS` — compiler-specific build workarounds
 - `OPENMPI_RUN_FLAGS` / `MPICH_RUN_ENV_*` — MPI runtime settings
 - `RELEASE_TESTDATA_{RES}` — GitHub release tag for `{resolution}.tar.gz` test archives (`RES` uppercased, `-` → `_`)
-- `RELEASE_ECT` — release tag for ECT data (summary + restart), pinned to MPAS-Dev version
 - `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
+- The ECT release tag (`ect-v{MPAS_VERSION}`) is **not** stored here; it is derived at runtime from `src/core_atmosphere/Registry.xml` by the `mpas-version` composite action (see below). This guarantees the writer (`ect-ensemble-gen.yml`) and readers (`_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `validate-ect`) can never drift apart.
 - `PYCECT_TAG` — PyCECT git tag for `validate-ect`
 - `BFB_*` — default resolution, duration, and run timeout for bit-for-bit workflows; per-variant overrides live in the `variants` JSON passed to `_test-bfb.yml`
 
@@ -184,7 +184,10 @@ Runs a standard MPAS-A case: uses `download-testdata`, copies the extracted tree
 Runs perturbed ensemble members for ECT. Requires explicit `run-duration` and `run-timeout` inputs. Sources `ci-config.env` for ECT settings (perturbation variable/magnitude, excluded-vars path, etc.). Activates conda, installs netCDF4/numpy, loops through members applying theta perturbation, runs the model, and trims history files. Supports restart mode.
 
 ### validate-ect
-Sources `ci-config.env` for summary filename, time slice, PyCECT tag, and `RELEASE_ECT`; downloads the summary from the matching release URL; installs deps, clones PyCECT at `PYCECT_TAG`, runs validation, writes enriched result file with dimension metadata.
+Takes a required `mpas-version` input and builds the release tag as `ect-v{mpas-version}`. Sources `ci-config.env` for summary filename, time slice, and PyCECT tag (no `RELEASE_ECT` lookup). Downloads the summary from the matching release URL, installs deps, clones PyCECT at `PYCECT_TAG`, runs validation, and writes an enriched result file with dimension metadata.
+
+### mpas-version
+Reads the MPAS version string from `src/core_atmosphere/Registry.xml` using `python3` + `xml.etree.ElementTree`. Strict — fails the workflow if the file is missing or the `<registry version="…">` attribute cannot be parsed (no silent `unknown` fallback). Single source of truth for the `ect-v{MPAS_VERSION}` release tag used by `_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `ect-ensemble-gen.yml`, and `validate-ect`. Workflows that consume the version typically extract it once in their `config` job and pass it to downstream jobs as a job output.
 
 ### setup-nsight-systems
 Ensures a working `nsys` (Nsight Systems CLI) on EL-based GPU images: prefers an existing install, otherwise installs **`nsight-systems-cli`** from NVIDIA’s devtools RPM repo and caches downloaded RPMs for faster reruns (`NSYS_CLI_CACHE_VERSION` in `ci-config.env`).
@@ -198,7 +201,7 @@ Key constraints:
 - **Spin-up restart**: cold-start `init.nc` has zero hydrometeors. Ensemble generation runs 24h unperturbed first, then perturbs from the restart.
 - **PyCECT minimum members**: ensemble size must be >= number of output variables (~48). Default: 200.
 - **Time slice**: always extract last slice (`--tslice -1`) — slice 0 in cold-start mode is the unintegrated initial state.
-- ECT parameters and paths in `.github/ci-config.env` (`ECT_*`, `ECT_EXCLUDED_VARS`, `PYCECT_TAG`, release tags)
+- ECT parameters and paths in `.github/ci-config.env` (`ECT_*`, `ECT_EXCLUDED_VARS`, `PYCECT_TAG`); the ECT release tag itself is derived at runtime from `Registry.xml` via the `mpas-version` composite action.
 
 ## Shell Scripting Notes
 

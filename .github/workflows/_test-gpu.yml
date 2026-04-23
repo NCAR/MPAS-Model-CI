@@ -37,10 +37,14 @@ jobs:
     outputs:
       image: ${{ steps.container.outputs.image }}
       image-gpu: ${{ steps.gpu-container.outputs.image }}
+      mpas-version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
-          sparse-checkout: .github
+          sparse-checkout: |
+            .github
+            src/core_atmosphere/Registry.xml
+          sparse-checkout-cone-mode: false
       - uses: ./.github/actions/resolve-container
         id: container
         with:
@@ -52,6 +56,8 @@ jobs:
           compiler: nvhpc
           mpi: ${{ inputs.mpi }}
           gpu: cuda
+      - uses: ./.github/actions/mpas-version
+        id: version
 
   build:
     needs: config
@@ -155,6 +161,7 @@ jobs:
         run: |
           source .github/ci-config.env
           RESTART="${ECT_RESTART_FILE}"
+          RELEASE_TAG="ect-v${{ needs.config.outputs.mpas-version }}"
 
           if [ -f "spinup-restart.nc" ]; then
             echo "Using cached restart file"
@@ -164,9 +171,9 @@ jobs:
             exit 0
           fi
 
-          echo "Downloading ${RESTART}.gz from ${GITHUB_REPOSITORY} release ${RELEASE_ECT}..."
+          echo "Downloading ${RESTART}.gz from ${GITHUB_REPOSITORY} release ${RELEASE_TAG}..."
           HTTP_CODE=$(curl -sL --retry 5 --retry-delay 5 -w "%{http_code}" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_ECT}/${RESTART}.gz" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${RESTART}.gz" \
             -o "${RESTART}.gz")
           if [ "${HTTP_CODE}" = "200" ]; then
             gunzip "${RESTART}.gz"
@@ -201,7 +208,7 @@ jobs:
           retention-days: 1
 
   ect-validate:
-    needs: ect-run
+    needs: [config, ect-run]
     if: ${{ needs.ect-run.result == 'success' }}
     name: ECT Validate (cuda, ${{ inputs.mpi }})
     runs-on: ubuntu-latest
@@ -230,6 +237,7 @@ jobs:
         with:
           history-dir: ect-test-files
           label: nvhpc/${{ inputs.mpi }}/cuda/smiol
+          mpas-version: ${{ needs.config.outputs.mpas-version }}
           dimensions: |
             compiler=nvhpc
             mpi=${{ inputs.mpi }}

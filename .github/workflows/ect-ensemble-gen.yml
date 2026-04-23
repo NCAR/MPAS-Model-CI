@@ -124,12 +124,16 @@ jobs:
         run: cp -r _ci/.github . && rm -rf _ci
 
       - name: Extract MPAS version
+        id: mpas_version
+        uses: ./.github/actions/mpas-version
+
+      - name: Resolve commit and re-export version
         id: version
+        shell: bash
         run: |
-          VERSION=$(grep -oP '<registry.*version="\K[^"]+' src/core_atmosphere/Registry.xml || echo "unknown")
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
           COMMIT=$(git rev-parse --short=8 HEAD)
-          echo "mpas-version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "mpas-version=${{ steps.mpas_version.outputs.version }}" >> $GITHUB_OUTPUT
           echo "mpas-commit=${COMMIT}" >> $GITHUB_OUTPUT
 
       - name: Build MPAS-A (double precision)
@@ -460,7 +464,7 @@ jobs:
           fi
 
   #===========================================================================
-  # PUBLISH RESTART: Upload spin-up restart to RELEASE_ECT
+  # PUBLISH RESTART: Upload spin-up restart to ect-v{MPAS_VERSION}
   # Runs after spinup regardless of ensemble/summary outcome.
   # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
   #===========================================================================
@@ -511,7 +515,7 @@ jobs:
           echo "  File: ${RESTART_NAME}.gz ($(du -h "${RESTART_NAME}.gz" | cut -f1))"
 
   #===========================================================================
-  # PUBLISH SUMMARY: Upload ensemble summary to RELEASE_ECT
+  # PUBLISH SUMMARY: Upload ensemble summary to ect-v{MPAS_VERSION}
   # Only runs when summary generation succeeds.
   # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
   #===========================================================================
@@ -560,11 +564,6 @@ jobs:
 
           echo "=== Published summary to release ${TAG} ==="
           echo "  File: ${CURRENT_SUMMARY}"
-
-          source .github/ci-config.env
-          if [ "${RELEASE_ECT}" != "${TAG}" ]; then
-            echo "::warning::RELEASE_ECT in ci-config.env is '${RELEASE_ECT}' but this run published to '${TAG}'. Update ci-config.env to point test workflows at the new data."
-          fi
 
   #===========================================================================
   # CLEANUP
