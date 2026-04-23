@@ -47,9 +47,6 @@ fi
 MPI_FLAGS=""
 if [ "${MPI_IMPL}" = "openmpi" ]; then
   MPI_FLAGS="${OPENMPI_RUN_FLAGS:---allow-run-as-root --oversubscribe}"
-elif [ "${MPI_IMPL}" = "mpich" ]; then
-  export MPICH_GPU_SUPPORT_ENABLED="${MPICH_RUN_ENV_MPICH_GPU_SUPPORT_ENABLED:-0}"
-  export MPIR_CVAR_ENABLE_GPU="${MPICH_RUN_ENV_MPIR_CVAR_ENABLE_GPU:-0}"
 fi
 
 ulimit -s unlimited 2>/dev/null || true

@@ -429,8 +429,8 @@ def section_reference(ci_path):
     lines.append("    ### MPI Implementation Notes\n")
     lines.append("    | Matrix value | MPI version | Flags |")
     lines.append("    |-------------|-------------|-------|")
-    lines.append("    | `mpich3` | MPICH 3.x | `MPICH_GPU_SUPPORT_ENABLED=0` |")
-    lines.append("    | `mpich` | MPICH 4.x | `MPICH_GPU_SUPPORT_ENABLED=0` |")
+    lines.append("    | `mpich3` | MPICH 3.x | (none) |")
+    lines.append("    | `mpich` | MPICH 4.x | (none) |")
     lines.append("    | `openmpi` | OpenMPI | `--allow-run-as-root --oversubscribe` |")
     lines.append("")
 
