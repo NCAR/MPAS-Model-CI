@@ -121,7 +121,7 @@ Key settings:
 - `CONTAINER_COMPILER_{name}` — name mappings when image tags differ (e.g., `gcc` → `gcc14`)
 - `MAKE_TARGET_{compiler}` — maps CI names to Makefile targets
 - `NVHPC_EXTRA_MAKE_FLAGS` / `ONEAPI_EXTRA_MAKE_FLAGS` — compiler-specific build workarounds
-- `OPENMPI_RUN_FLAGS` — MPI runtime flags (only OpenMPI needs them: `--allow-run-as-root --oversubscribe`). MPICH 4.x in our containers needs no extra runtime env vars; the historical `MPICH_GPU_SUPPORT_ENABLED=0` / `MPIR_CVAR_ENABLE_GPU=0` exports were removed once `pmodels/mpich#6523` (no-GPU init crash) was fixed in MPICH 4.1.
+- `OPENMPI_RUN_FLAGS` — extra `mpirun` flags for OpenMPI in containers (root + oversubscribe). MPICH needs no equivalent. Comment in `ci-config.env` lists the consumer sites for adding analogous flags later.
 - `RELEASE_TESTDATA_{RES}` — GitHub release tag for `{resolution}.tar.gz` test archives (`RES` uppercased, `-` → `_`)
 - `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
 - The ECT release tag (`ect-v{MPAS_VERSION}`) is **not** stored here; it is derived at runtime from `src/core_atmosphere/Registry.xml` by the `mpas-version` composite action (see below). This guarantees the writer (`ect-ensemble-gen.yml`) and readers (`_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `validate-ect`) can never drift apart.
