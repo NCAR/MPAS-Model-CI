@@ -1,5 +1,5 @@
 # BFB: NVHPC without OpenACC (GitHub-hosted) vs NVHPC + OpenACC (CIRRUS GPU).
-# Same MPI, rank count, resolution, and double precision — compares history variable
+# Same MPI, rank count, resolution, and single precision — compares history variable
 # data bitwise. CPU vs GPU OpenACC often differs; this workflow makes that visible.
 #
 # workflow_dispatch for routine use (after this file is on the default branch).
