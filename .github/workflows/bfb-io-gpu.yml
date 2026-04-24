@@ -13,7 +13,7 @@ jobs:
       compiler: nvhpc
       mpi: mpich
       gpu: 'true'
-      precision: double
+      precision: single
       run-timeout: '20'
       variants: >-
         [{"id":"smiol-r4","ranks":4,"label":"SMIOL, 4 ranks"},

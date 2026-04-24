@@ -17,7 +17,7 @@ jobs:
       compiler: nvhpc
       mpi: mpich
       gpu: 'false'
-      precision: double
+      precision: single
       run-timeout: '20'
       variants: >-
         [{"id":"cpu","ranks":4,"openacc":false,"label":"NVHPC CPU (no OpenACC)"},
