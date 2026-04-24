@@ -188,8 +188,11 @@ runs:
           set -e
           echo "[$(date +%H:%M:%S)] Model finished (exit code ${RUN_STATUS})"
 
-          for LOGFILE in log.atmosphere.*.out; do
-            [ -f "${LOGFILE}" ] && cp "${LOGFILE}" "../${OUTDIR}/${LOGFILE%.out}.member${MEMBER_ID}.out"
+          for LOGFILE in log.atmosphere.*.out log.atmosphere.*.err; do
+            [ -f "${LOGFILE}" ] || continue
+            EXT="${LOGFILE##*.}"
+            BASE="${LOGFILE%.*}"
+            cp "${LOGFILE}" "../${OUTDIR}/${BASE}.member${MEMBER_ID}.${EXT}"
           done
 
           if [ "${VERBOSE}" = "true" ]; then
@@ -273,3 +276,9 @@ runs:
           echo "::error::No ensemble members produced history files"
           exit 1
         fi
+
+    - name: Print MPAS logs
+      if: always()
+      uses: ./.github/actions/print-mpas-logs
+      with:
+        log-dir: ${{ inputs.output-dir }}

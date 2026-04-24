@@ -179,6 +179,12 @@ runs:
           echo "Working directory ${WORKDIR} does not exist"
         fi
 
+    - name: Print MPAS logs
+      if: always()
+      uses: ./.github/actions/print-mpas-logs
+      with:
+        log-dir: ${{ steps.config.outputs.workdir }}
+
     - name: Check run status
       shell: bash
       if: always()

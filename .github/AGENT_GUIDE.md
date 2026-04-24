@@ -26,6 +26,7 @@ This is `NCAR/MPAS-Model-CI`, a fork of `MPAS-Dev/MPAS-Model`. The MPAS source c
 │   ├── run-perturb-mpas/        # Runs perturbed ensemble members for ECT
 │   │   ├── perturb_theta.py     # IC perturbation (theta field)
 │   │   └── trim_history.py      # Trims history files for artifact upload
+│   ├── print-mpas-logs/         # Dumps log.atmosphere.* into ::group:: blocks
 │   ├── validate-ect/            # PyCECT validation
 │   └── ect-summary/             # Consolidated ECT results table
 └── workflows/
@@ -188,6 +189,9 @@ Takes a required `mpas-version` input and builds the release tag as `ect-v{mpas-
 
 ### mpas-version
 Reads the MPAS version string from `src/core_atmosphere/Registry.xml` using `python3` + `xml.etree.ElementTree`. Strict — fails the workflow if the file is missing or the `<registry version="…">` attribute cannot be parsed (no silent `unknown` fallback). Single source of truth for the `ect-v{MPAS_VERSION}` release tag used by `_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `ect-ensemble-gen.yml`, and `validate-ect`. Workflows that consume the version typically extract it once in their `config` job and pass it to downstream jobs as a job output.
+
+### print-mpas-logs
+Dumps MPAS per-rank log files (`log.atmosphere.<rank>.out` / `.err`) to the workflow log inside collapsible `::group::` blocks so the GitHub Actions UI gives one expandable section per file. Inputs: `log-dir` (required), `pattern` (default `log.atmosphere.*`), `max-lines` (default empty = full file; set to N to `tail -n N`). Read-only and never fails on its own — call sites should add `if: always()` so logs print on both success and failure. Already wired into `run-mpas` (reads from the run working dir) and `run-perturb-mpas` (reads from `output-dir`, where the per-member loop has copied each rank's `.out` and `.err` before tearing down the rundir).
 
 ### setup-nsight-systems
 Ensures a working `nsys` (Nsight Systems CLI) on EL-based GPU images: prefers an existing install, otherwise installs **`nsight-systems-cli`** from NVIDIA’s devtools RPM repo and caches downloaded RPMs for faster reruns (`NSYS_CLI_CACHE_VERSION` in `ci-config.env`).
