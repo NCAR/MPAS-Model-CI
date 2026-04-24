@@ -50,7 +50,7 @@ runs:
           echo "In **Settings → Actions → Caches**, search for keys starting with \`nsight-systems-cli-rpms-\`."
           echo ""
           echo "- **cache-hit** (this run): \`${{ steps.cache-nsys.outputs.cache-hit }}\`"
-      } >> "${GITHUB_STEP_SUMMARY}"
+        } >> "${GITHUB_STEP_SUMMARY}"
         if [ -d .cache/nsight-systems-rpms ]; then
           echo "- **RPM dir size:** \`$(du -sh .cache/nsight-systems-rpms 2>/dev/null || echo unknown)\`" >> "${GITHUB_STEP_SUMMARY}"
         fi
