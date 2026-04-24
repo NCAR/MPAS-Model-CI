@@ -48,6 +48,10 @@ runs:
         fi
 
         echo "print-mpas-logs: ${#FILES[@]} file(s) from ${LOG_DIR}"
+        # Close the implicit group GitHub opens for the run: script source so
+        # the per-file groups below render at the step's top level (collapsible
+        # at normal font size) instead of nested inside the script-source group.
+        echo "::endgroup::"
         for f in "${FILES[@]}"; do
           echo "::group::${f}"
           if [ -n "${MAX_LINES}" ]; then
