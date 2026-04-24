@@ -157,7 +157,7 @@ nvhpc:   # BUILDTARGET NVIDIA HPC SDK
 	"LDFLAGS_DEBUG = -O0 -g -Mbounds -Ktrap=divz,fp,inv,ovf -traceback" \
 	"FFLAGS_OMP = -mp" \
 	"CFLAGS_OMP = -mp" \
-	"FFLAGS_ACC = -Mnofma -acc -gpu=cc90 -Minfo=accel" \
+	"FFLAGS_ACC = -Mnofma -acc -gpu=ccnative -Minfo=accel" \
 	"CFLAGS_ACC =" \
 	"PICFLAG = -fpic" \
 	"BUILD_TARGET = $(@)" \
