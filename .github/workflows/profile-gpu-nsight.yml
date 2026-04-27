@@ -37,6 +37,11 @@ on:
         required: false
         default: '40'
         type: string
+      cuda_aware_mpi:
+        description: Enable CUDA-aware MPI (passes device pointers directly to MPI). Requires MPI in the container to be built with GPU support.
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   config:
@@ -129,6 +134,8 @@ jobs:
 
       - name: Run nsys profile
         shell: bash
+        env:
+          CUDA_AWARE_MPI: ${{ inputs.cuda_aware_mpi }}
         run: |
           chmod +x .github/scripts/run-nsys-profile.sh
           bash .github/scripts/run-nsys-profile.sh \
