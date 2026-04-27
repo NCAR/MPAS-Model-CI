@@ -170,7 +170,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart
+          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
 
       - name: Download executable
         if: steps.cache.outputs.cache-hit != 'true'
@@ -212,7 +212,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart
+          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
 
       - name: Upload restart artifact
         uses: actions/upload-artifact@v6
