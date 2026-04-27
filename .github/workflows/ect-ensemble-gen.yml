@@ -566,33 +566,25 @@ jobs:
 
   #===========================================================================
   # CLEANUP
+  # Only runs on a fully successful workflow. On any failure (batch, summary,
+  # or publish), every artifact is retained until retention-days expires so
+  # `gh run rerun --failed` can find the executable, spin-up restart, and
+  # per-batch history files it needs to recover.
   #===========================================================================
   cleanup:
     needs: [run-ensemble, generate-summary, publish-restart, publish-summary]
-    if: always()
+    if: needs.publish-summary.result == 'success'
     runs-on: ubuntu-latest
     name: Cleanup
 
     steps:
-      - name: Delete build artifacts
+      - name: Delete build and ensemble artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
-            --paginate --jq '.artifacts[] | select(.name == "exe-ect-ensemble" or .name == "spinup-restart") | .id' \
-          | while read id; do
-              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
-            done || true
-
-      - name: Delete ensemble artifacts (only after successful summary)
-        if: needs.generate-summary.result == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
-            --paginate --jq '.artifacts[] | select(.name | startswith("ect-ensemble-")) | .id' \
+            --paginate --jq '.artifacts[] | select(.name == "exe-ect-ensemble" or .name == "spinup-restart" or (.name | startswith("ect-ensemble-"))) | .id' \
           | while read id; do
               gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
             done || true
