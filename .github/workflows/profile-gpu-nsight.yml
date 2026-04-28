@@ -104,9 +104,21 @@ jobs:
       - name: GPU check
         shell: bash
         run: |
-          echo "## GPU" >> "$GITHUB_STEP_SUMMARY"
-          nvidia-smi || echo "::warning::nvidia-smi failed"
-          nvidia-smi || true
+          {
+            echo "## GPU diagnostics"
+            echo ""
+            echo "### /dev/nvidia*"
+            ls -la /dev/nvidia* 2>&1 || echo "(none — container not GPU-mapped?)"
+            echo ""
+            echo "### nvidia-smi -L (uses /dev/nvidia*, bypasses libnvidia-ml stub)"
+            nvidia-smi -L 2>&1 || echo "(nvidia-smi -L failed)"
+            echo ""
+            echo "### nvidia-smi --query-gpu (CSV)"
+            nvidia-smi --query-gpu=index,name,uuid,driver_version,memory.total --format=csv 2>&1 || echo "(query failed)"
+            echo ""
+            echo "### CUDA / OpenACC env"
+            env | grep -E '^(CUDA|ACC|NVIDIA|MPICH_GPU|OMPI|UCX)_' | sort || true
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Nsight Systems CLI (install + RPM cache)
         uses: ./.github/actions/setup-nsight-systems

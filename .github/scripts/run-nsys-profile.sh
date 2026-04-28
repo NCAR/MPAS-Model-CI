@@ -82,12 +82,14 @@ echo "  timeout:        ${TIMEOUT}m"
 
 # Trace MPI alongside CUDA so halo exchanges show up in the timeline and we
 # can tell device-to-device transfers from host-staged ones.
+# pin-gpu.sh sets CUDA_VISIBLE_DEVICES per rank so multi-rank runs spread
+# across the node's GPUs instead of stacking on device 0.
 set +e
 timeout "${TIMEOUT}"m "${NSYS_BIN}" profile \
   --trace=cuda,nvtx,osrt,mpi \
   --stats=true \
   -o "${OUT_ABS}" \
-  mpirun -n "${NUM_PROCS}" ${MPI_FLAGS} ./atmosphere_model
+  mpirun -n "${NUM_PROCS}" ${MPI_FLAGS} bash "${SCRIPT_DIR}/pin-gpu.sh" ./atmosphere_model
 RUN_STATUS=$?
 set -e
 
