@@ -6478,7 +6478,7 @@ module atm_time_integration
       !
 
       !$acc parallel default(present)
-      !$acc loop gang worker private(wduz, q)
+      !$acc loop gang private(wduz, q)
       do iEdge=edgeSolveStart,edgeSolveEnd
 
          cell1 = cellsOnEdge(1,iEdge)
