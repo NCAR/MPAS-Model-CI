@@ -7274,25 +7274,21 @@ module atm_time_integration
          ke_fact = 1.0 - .375
 
          !$acc parallel default(present)
-         !$acc loop collapse(2)
+         !$acc loop gang worker
          do iCell=cellStart,cellEnd
-            do k=1,nVertLevels
+            r = (1.0_RKIND - ke_fact) * invAreaCell(iCell)
+            !$acc loop vector
+            do k = 1,nVertLevels
                ke(k,iCell) = ke_fact * ke(k,iCell)
             end do
-         end do
-
-
-         !$acc loop gang
-         do iCell=cellStart,cellEnd
-            r = invAreaCell(iCell)
             !$acc loop seq
             do i=1,nEdgesOnCell(iCell)
                iVertex = verticesOnCell(i,iCell)
                j = kiteForCell(i,iCell)
-!DIR$ IVDEP
+         !DIR$ IVDEP
                !$acc loop vector
                do k = 1,nVertLevels
-                  ke(k,iCell) = ke(k,iCell) + (1.-ke_fact)*kiteAreasOnVertex(j,iVertex) * ke_vertex(k,iVertex) * r
+                  ke(k,iCell) = ke(k,iCell) + kiteAreasOnVertex(j,iVertex) * ke_vertex(k,iVertex) *r
                end do
             end do
          end do
