@@ -6809,31 +6809,20 @@ module atm_time_integration
          !$acc loop vector
          do k=1,nVertLevels
             tend_theta(k,iCell) = 0.0_RKIND
-         end do
-
-         !$acc loop seq
-         do i=1,nEdgesOnCell(iCell)
-            iEdge = edgesOnCell(i,iCell)
-
-            !$acc loop vector
-            do k=1,nVertLevels
-               flux_arr(k) = 0.0_RKIND
-            end do
 
             !$acc loop seq
-            do j=1,nAdvCellsForEdge(iEdge)
-               iAdvCell = advCellsForEdge(j,iEdge)
+            do i=1,nEdgesOnCell(iCell)
+               iEdge = edgesOnCell(i,iCell)
 
-               !$acc loop vector
-               do k=1,nVertLevels
+               flux_arr(k) = 0.0_RKIND
+
+               !$acc loop seq
+               do j=1,nAdvCellsForEdge(iEdge)
+                  iAdvCell = advCellsForEdge(j,iEdge)
                   scalar_weight = adv_coefs(j,iEdge) + sign(1.0_RKIND,ru(k,iEdge))*adv_coefs_3rd(j,iEdge)
                   flux_arr(k) = flux_arr(k) + scalar_weight* theta_m(k,iAdvCell)
                end do
-            end do
 
-!DIR$ IVDEP
-            !$acc loop vector
-            do k=1,nVertLevels
                tend_theta(k,iCell) = tend_theta(k,iCell) - edgesOnCell_sign(i,iCell) * ru(k,iEdge) * flux_arr(k)
             end do
 
