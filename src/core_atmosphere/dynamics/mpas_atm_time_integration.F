@@ -7091,7 +7091,7 @@ module atm_time_integration
       ! Local variables
       !
       integer :: iEdge, iCell, iVertex, k, cell1, cell2, eoe, i, j
-      real (kind=RKIND) :: h_vertex, r, s
+      real (kind=RKIND) :: h_vertex, r, sign_norm
       real (kind=RKIND) :: r1, r2
 
       logical, parameter :: hollingsworth=.true.
@@ -7104,46 +7104,54 @@ module atm_time_integration
       ! Compute height on cell edges at velocity locations
       !
       !$acc parallel default(present)
-      !$acc loop gang worker
-      do iEdge=edgeStart,edgeEnd
-         cell1 = cellsOnEdge(1,iEdge)
-         cell2 = cellsOnEdge(2,iEdge)
+      !!$acc loop gang
+      !do iEdge=edgeStart,edgeEnd
+      !   cell1 = cellsOnEdge(1,iEdge)
+      !   cell2 = cellsOnEdge(2,iEdge)
+!!DIR$ IVDEP
+      !   !  the first openmp barrier below is set so that ke_edge is computed
+      !   !  it would be good to move this somewhere else?
+      !   ! DH - Fused loop vector
+      !   efac = dcEdge(iEdge)*dvEdge(iEdge)
+      !   !$acc loop vector
+      !   do k=1,nVertLevels
+      !      h_edge(k,iEdge) = 0.5 * (h(k,cell1) + h(k,cell2))
+      !      ke_edge(k,iEdge) = efac*u(k,iEdge)**2
+      !   end do
+      !end do
+
 !DIR$ IVDEP
-         !$acc loop vector
+      !$acc loop gang vector collapse(2)
+      do iEdge=edgeStart,edgeEnd
          do k=1,nVertLevels
-            h_edge(k,iEdge) = 0.5 * (h(k,cell1) + h(k,cell2))
+            h_edge(k,iEdge) = 0.5_RKIND * (h(k,cellsOnEdge(1,iEdge)) + h(k,cellsOnEdge(2,iEdge)))
+            ke_edge(k,iEdge) = dcEdge(iEdge)*dvEdge(iEdge) * u(k,iEdge)**2
          end do
-
-!  the first openmp barrier below is set so that ke_edge is computed
-!  it would be good to move this somewhere else?
-         !$acc loop vector
-         do k=1,nVertLevels
-            ke_edge(k,iEdge) = dcEdge(iEdge)*dvEdge(iEdge)*u(k,iEdge)**2
-         end do
-
       end do
-
       !
       ! Compute circulation and relative vorticity at each vertex
       !
       !$acc loop gang worker
       do iVertex=vertexStart,vertexEnd
+         ! DH - Direct asign first iteration without zero initialization
+         iEdge = edgesOnVertex(1,iVertex)
+         sign_norm = edgesOnVertex_sign(1,iVertex) * dcEdge(iEdge) * invAreaTriangle(iVertex)
+!DIR$ IVDEP
          !$acc loop vector
          do k=1,nVertLevels
-            vorticity(k,iVertex) = 0.0_RKIND
+            vorticity(k,iVertex) = sign_norm * u(k,iEdge)
          end do
-         !$acc loop vector
-         do k=1,nVertLevels
-            !$acc loop seq
-            do i=1,vertexDegree
-               iEdge = edgesOnVertex(i,iVertex)
-               s = edgesOnVertex_sign(i,iVertex) * dcEdge(iEdge)
-               vorticity(k,iVertex) = vorticity(k,iVertex) + s * u(k,iEdge)
+
+         ! DH - Folded invAreaTriangle into sign_norm var
+         !$acc loop seq
+         do i=2,vertexDegree
+            iEdge = edgesOnVertex(i,iVertex)
+            sign_norm = edgesOnVertex_sign(i,iVertex) * dcEdge(iEdge) * invAreaTriangle(iVertex)
+!DIR$ IVDEP
+            !$acc loop vector
+            do k=1,nVertLevels
+               vorticity(k,iVertex) = vorticity(k,iVertex) + sign_norm * u(k,iEdge)
             end do
-         end do
-         !$acc loop vector
-         do k=1,nVertLevels
-            vorticity(k,iVertex) = vorticity(k,iVertex) * invAreaTriangle(iVertex)
          end do
       end do
 
@@ -7153,24 +7161,23 @@ module atm_time_integration
       !
       !$acc loop gang worker
       do iCell=cellStart,cellEnd
+         ! DH - Direct asign first iteration without zero initialization
+         iEdge = edgesOnCell(1,iCell)
+         sign_norm = edgesOnCell_sign(1,iCell) * dvEdge(iEdge) * invAreaCell(iCell)
+!DIR$ IVDEP
          !$acc loop vector
          do k=1,nVertLevels
-            divergence(k,iCell) = 0.0_RKIND
+            divergence(k,iCell) = sign_norm * u(k,iEdge)
          end do
          !$acc loop seq
-         do i=1,nEdgesOnCell(iCell)
+         do i=2,nEdgesOnCell(iCell)
             iEdge = edgesOnCell(i,iCell)
-            s = edgesOnCell_sign(i,iCell) * dvEdge(iEdge)
+            sign_norm = edgesOnCell_sign(i,iCell) * dvEdge(iEdge) * invAreaCell(iCell)
 !DIR$ IVDEP
             !$acc loop vector
             do k=1,nVertLevels
-              divergence(k,iCell) = divergence(k,iCell) + s * u(k,iEdge)
+              divergence(k,iCell) = divergence(k,iCell) + sign_norm * u(k,iEdge)
             end do
-         end do
-         r = invAreaCell(iCell)
-         !$acc loop vector
-         do k = 1,nVertLevels
-            divergence(k,iCell) = divergence(k,iCell) * r
          end do
       end do
       !$acc end parallel
@@ -7219,7 +7226,7 @@ module atm_time_integration
          !$acc parallel default(present)
          !$acc loop gang
          do iVertex=vertexStart,vertexEnd
-            r = 0.25 * invAreaTriangle(iVertex) 
+            r = 0.25_RKIND * invAreaTriangle(iVertex) 
             !$acc loop vector
             do k=1,nVertLevels
 
@@ -7325,7 +7332,7 @@ module atm_time_integration
       do iEdge = edgeStart,edgeEnd
 !DIR$ IVDEP
          do k=1,nVertLevels
-            pv_edge(k,iEdge) =  0.5 * (pv_vertex(k,verticesOnEdge(1,iEdge)) + pv_vertex(k,verticesOnEdge(2,iEdge)))
+            pv_edge(k,iEdge) =  0.5_RKIND * (pv_vertex(k,verticesOnEdge(1,iEdge)) + pv_vertex(k,verticesOnEdge(2,iEdge)))
          end do
       end do
       !$acc end parallel
