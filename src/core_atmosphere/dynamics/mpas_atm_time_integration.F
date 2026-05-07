@@ -7125,7 +7125,7 @@ module atm_time_integration
       ! Compute height on cell edges at velocity locations
       !
       !$acc parallel default(present)
-      !$acc loop gang
+      !$acc loop gang worker
       do iEdge=edgeStart,edgeEnd
          cell1 = cellsOnEdge(1,iEdge)
          cell2 = cellsOnEdge(2,iEdge)
@@ -7149,7 +7149,7 @@ module atm_time_integration
       !
       ! Compute circulation and relative vorticity at each vertex
       !
-      !$acc loop gang
+      !$acc loop gang worker
       do iVertex=vertexStart,vertexEnd
          !$acc loop vector
          do k=1,nVertLevels
@@ -7176,7 +7176,7 @@ module atm_time_integration
       !
       ! Compute the divergence at each cell center
       !
-      !$acc loop gang
+      !$acc loop gang worker
       do iCell=cellStart,cellEnd
          !$acc loop vector
          do k=1,nVertLevels
