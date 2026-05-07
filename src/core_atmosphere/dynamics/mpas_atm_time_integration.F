@@ -7132,7 +7132,7 @@ module atm_time_integration
       ! Compute height on cell edges at velocity locations
       !
       !$acc parallel default(present)
-      !$acc loop gang
+      !!$acc loop gang
       !do iEdge=edgeStart,edgeEnd
       !   cell1 = cellsOnEdge(1,iEdge)
       !   cell2 = cellsOnEdge(2,iEdge)
