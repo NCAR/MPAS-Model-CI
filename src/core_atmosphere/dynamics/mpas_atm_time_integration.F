@@ -5543,26 +5543,28 @@ module atm_time_integration
 !$OMP BARRIER
 
          !$acc parallel
-
          !$acc loop gang worker
          do iCell=cellSolveStart,cellSolveEnd
+            iac = invAreaCell(iCell)
+            !$acc loop vector
+            do k=1, nVertLevels
+               !$acc loop seq
+               do i=1,nEdgesOnCell(iCell)
+                  iEdge = edgesOnCell(i,iCell)
+                  eoc_s = edgesOnCell_sign(i,iCell)
+                  f_t = flux_tmp(k,iEdge)
 
-            !$acc loop seq
-            do i=1,nEdgesOnCell(iCell)
-               iEdge = edgesOnCell(i,iCell)
-
-               !$acc loop vector
-               do k=1, nVertLevels
-                  scalar_new(k,iCell) = scalar_new(k,iCell) - edgesOnCell_sign(i,iCell) * flux_upwind_tmp(k,iEdge) * invAreaCell(iCell)
+                  scalar_new(k,iCell) = scalar_new(k,iCell) - eoc_s * flux_upwind_tmp(k,iEdge) * iac
  
                   scale_arr(k,SCALE_OUT,iCell) = scale_arr(k,SCALE_OUT,iCell) &
-                                                 - max(0.0_RKIND,edgesOnCell_sign(i,iCell)*flux_tmp(k,iEdge)) * invAreaCell(iCell)
+                                                 - max(0.0_RKIND,eoc_s*f_t) * iac
                   scale_arr(k,SCALE_IN, iCell) = scale_arr(k,SCALE_IN, iCell) &
-                                                 - min(0.0_RKIND,edgesOnCell_sign(i,iCell)*flux_tmp(k,iEdge)) * invAreaCell(iCell)
+                                                 - min(0.0_RKIND,eoc_s*f_t) * iac
                end do
 
             end do
          end do
+         !$acc end parallel
 
 
          !
@@ -5573,10 +5575,9 @@ module atm_time_integration
          ! worked through algebra and found equivalent form
          ! added benefit that it should address ifort single prec overflow issue
          if (local_advance_density) then
-            !$acc loop gang worker
+            !$acc parallel
+            !$acc loop gang worker vector collapse(2) private(scale_factor)
             do iCell=cellSolveStart,cellSolveEnd
-
-               !$acc loop vector
                do k = 1, nVertLevels
                   scale_factor = (s_max(k,iCell)*rho_zz_int(k,iCell) - scalar_new(k,iCell)) / &
                        (scale_arr(k,SCALE_IN,iCell)  + eps)
@@ -5587,11 +5588,11 @@ module atm_time_integration
                   scale_arr(k,SCALE_OUT,iCell) = min( 1.0_RKIND, max( 0.0_RKIND, scale_factor) )
                end do
             end do
+            !$acc end parallel
          else
-            !$acc loop gang worker
+            !$acc parallel
+            !$acc loop gang worker vector collapse(2) private(scale_factor)
             do iCell=cellSolveStart,cellSolveEnd
-
-               !$acc loop vector
                do k = 1, nVertLevels
                   scale_factor = (s_max(k,iCell)*rho_zz_new(k,iCell) - scalar_new(k,iCell)) / &
                        (scale_arr(k,SCALE_IN,iCell)  + eps)
@@ -5602,9 +5603,8 @@ module atm_time_integration
                   scale_arr(k,SCALE_OUT,iCell) = min( 1.0_RKIND, max( 0.0_RKIND, scale_factor) )
                end do
             end do
+            !$acc end parallel
          end if
-
-         !$acc end parallel
 
          !
          !  communicate scale factors here.
