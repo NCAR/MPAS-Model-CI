@@ -7119,7 +7119,7 @@ module atm_time_integration
       ! Compute height on cell edges at velocity locations
       !
       !$acc parallel default(present)
-      !$acc loop gang
+      !$acc loop gang worker
       do iEdge=edgeStart,edgeEnd
          cell1 = cellsOnEdge(1,iEdge)
          cell2 = cellsOnEdge(2,iEdge)
@@ -7131,11 +7131,9 @@ module atm_time_integration
 
 !  the first openmp barrier below is set so that ke_edge is computed
 !  it would be good to move this somewhere else?
-
-         efac = dcEdge(iEdge)*dvEdge(iEdge)
          !$acc loop vector
          do k=1,nVertLevels
-            ke_edge(k,iEdge) = efac*u(k,iEdge)**2
+            ke_edge(k,iEdge) = dcEdge(iEdge)*dvEdge(iEdge)*u(k,iEdge)**2
          end do
 
       end do
@@ -7143,23 +7141,21 @@ module atm_time_integration
       !
       ! Compute circulation and relative vorticity at each vertex
       !
-      !$acc loop gang
+      !$acc loop gang worker
       do iVertex=vertexStart,vertexEnd
          !$acc loop vector
          do k=1,nVertLevels
             vorticity(k,iVertex) = 0.0_RKIND
          end do
-         !$acc loop seq
-         do i=1,vertexDegree
-            iEdge = edgesOnVertex(i,iVertex)
-            s = edgesOnVertex_sign(i,iVertex) * dcEdge(iEdge)
-!DIR$ IVDEP
-            !$acc loop vector
-            do k=1,nVertLevels
+         !$acc loop vector
+         do k=1,nVertLevels
+            !$acc loop seq
+            do i=1,vertexDegree
+               iEdge = edgesOnVertex(i,iVertex)
+               s = edgesOnVertex_sign(i,iVertex) * dcEdge(iEdge)
                vorticity(k,iVertex) = vorticity(k,iVertex) + s * u(k,iEdge)
             end do
          end do
-!DIR$ IVDEP
          !$acc loop vector
          do k=1,nVertLevels
             vorticity(k,iVertex) = vorticity(k,iVertex) * invAreaTriangle(iVertex)
@@ -7170,7 +7166,7 @@ module atm_time_integration
       !
       ! Compute the divergence at each cell center
       !
-      !$acc loop gang
+      !$acc loop gang worker
       do iCell=cellStart,cellEnd
          !$acc loop vector
          do k=1,nVertLevels
