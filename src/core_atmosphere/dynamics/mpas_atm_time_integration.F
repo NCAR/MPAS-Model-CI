@@ -7294,18 +7294,15 @@ module atm_time_integration
 
       if (reconstruct_v) then
         !$acc parallel default(present)
-        !$acc loop gang
+        !$acc loop gang worker
         do iEdge = edgeStart,edgeEnd
-          !$acc loop vector
+          !$acc loop vector private(eoe)
           do k = 1,nVertLevels
             v(k,iEdge) = 0.0_RKIND
-          end do
-          !$acc loop seq
-          do i=1,nEdgesOnEdge(iEdge)
-            eoe = edgesOnEdge(i,iEdge)
-!DIR$ IVDEP
-            !$acc loop vector
-            do k = 1,nVertLevels
+
+            !$acc loop seq
+            do i=1,nEdgesOnEdge(iEdge)
+              eoe = edgesOnEdge(i,iEdge)
               v(k,iEdge) = v(k,iEdge) + weightsOnEdge(i,iEdge) * u(k, eoe)
             end do
           end do
