@@ -5155,6 +5155,7 @@ module atm_time_integration
       real (kind=RKIND), dimension(nVertLevels) :: flux_upwind_arr
       real (kind=RKIND) :: flux3, flux4, flux_upwind
       real (kind=RKIND) :: q_im2, q_im1, q_i, q_ip1, ua, coef3
+      real (kind=RKIND) :: iac, eoc_s, f_t
 #ifdef DEBUG_TRANSPORT
       real (kind=RKIND) :: scmin,scmax
 #endif
