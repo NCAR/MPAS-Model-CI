@@ -7119,7 +7119,7 @@ module atm_time_integration
       ! Local variables
       !
       integer :: iEdge, iCell, iVertex, k, cell1, cell2, eoe, i, j
-      real (kind=RKIND) :: h_vertex, sign_norm
+      real (kind=RKIND) :: h_vertex, r, sign_norm
       real (kind=RKIND) :: r1, r2
 
       logical, parameter :: hollingsworth=.true.
@@ -7254,7 +7254,7 @@ module atm_time_integration
          !$acc parallel default(present)
          !$acc loop gang
          do iVertex=vertexStart,vertexEnd
-            r = 0.25 * invAreaTriangle(iVertex) 
+            r = 0.25_RKIND * invAreaTriangle(iVertex) 
             !$acc loop vector
             do k=1,nVertLevels
 
@@ -7367,7 +7367,7 @@ module atm_time_integration
       do iEdge = edgeStart,edgeEnd
 !DIR$ IVDEP
          do k=1,nVertLevels
-            pv_edge(k,iEdge) =  0.5 * (pv_vertex(k,verticesOnEdge(1,iEdge)) + pv_vertex(k,verticesOnEdge(2,iEdge)))
+            pv_edge(k,iEdge) =  0.5_RKIND * (pv_vertex(k,verticesOnEdge(1,iEdge)) + pv_vertex(k,verticesOnEdge(2,iEdge)))
          end do
       end do
       !$acc end parallel
