@@ -5470,17 +5470,16 @@ module atm_time_integration
 
 !$OMP BARRIER
 
-         !$acc parallel
 
          !
          !  vertical flux divergence for upwind update, we will put upwind update into scalar_new, and put factor of dt in fluxes
          !
 
+         !$acc parallel
          !$acc loop gang worker private(flux_upwind_arr)
          do iCell=cellSolveStart,cellSolveEnd
 
-            k = 1
-            scalar_new(k,iCell) = scalar_old(k,iCell) * rho_zz_old(k,iCell)
+            scalar_new(1,iCell) = scalar_old(1,iCell) * rho_zz_old(1,iCell)
 
             !$acc loop vector
             do k = 2, nVertLevels
@@ -5511,12 +5510,14 @@ module atm_time_integration
             end do
 
          end do
+         !$acc end parallel
 
          !
          !  horizontal flux divergence for upwind update
          !
 
          !  upwind flux computation
+         !$acc parallel
          !$acc loop gang worker
          do iEdge=edgeStart,edgeEnd
 
@@ -5528,15 +5529,12 @@ module atm_time_integration
                flux_upwind_tmp(k,iEdge) = dvEdge(iEdge) * dt *   &
                       (max(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell1) + min(0.0_RKIND,uhAvg(k,iEdge))*scalar_old(k,cell2))
                flux_tmp(k,iEdge) = dt * flux_arr(k,iEdge) - flux_upwind_tmp(k,iEdge)
-            end do
 
-            if( config_apply_lbcs .and. (bdyMaskEdge(iEdge) == nRelaxZone) .or. (bdyMaskEdge(iEdge) == nRelaxZone-1) ) then
-               !$acc loop vector
-               do k=1,nVertLevels
+               if( config_apply_lbcs .and. (bdyMaskEdge(iEdge) == nRelaxZone) .or. (bdyMaskEdge(iEdge) == nRelaxZone-1) ) then
                   flux_tmp(k,iEdge) = 0.0_RKIND
                   flux_arr(k,iEdge) = flux_upwind_tmp(k,iEdge)
-               end do
-            end if
+               end if
+            end do
 
          end do
 
