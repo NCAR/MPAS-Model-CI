@@ -4377,7 +4377,7 @@ module atm_time_integration
       ! Local variables
       !
       integer :: i, iCell, iEdge, k, cell1, cell2
-      real (kind=RKIND) :: invNs, rcv, p0, flux
+      real (kind=RKIND) :: invNs, rcv, p0, flux, edgeSign
 
 
       rcv = rgas/(cp-rgas)
@@ -4486,32 +4486,33 @@ module atm_time_integration
       !$acc loop gang worker
       do iCell=cellStart,cellEnd
 
-         !  finish recovering w from (rho*omega)_p.  as when we formed (rho*omega)_p from u and w, we need
-         !  to use the same flux-divergence operator as is used for the horizontal theta transport
-         !  (See Klemp et al 2003).
-
-         if (bdyMaskCell(iCell) <= nRelaxZone) then  ! addition for regional_MPAS, no spec zone update
+         if (bdyMaskCell(iCell) <= nRelaxZone) then
 
             !$acc loop seq
             do i=1,nEdgesOnCell(iCell)
                iEdge=edgesOnCell(i,iCell)
+               edgeSign = edgesOnCell_sign(i,iCell)
 
                flux = (cf1*ru(1,iEdge) + cf2*ru(2,iEdge) + cf3*ru(3,iEdge))
-               w(1,iCell) = w(1,iCell) + edgesOnCell_sign(i,iCell) * &
+               w(1,iCell) = w(1,iCell) + edgeSign * &
                                       (zb_cell(1,i,iCell) + sign(1.0_RKIND,flux)*zb3_cell(1,i,iCell))*flux
+            end do
+
+            w(1,iCell) = w(1,iCell)/(cf1*rho_zz(1,iCell)+cf2*rho_zz(2,iCell)+cf3*rho_zz(3,iCell))
+
+            !$acc loop seq
+            do i=1,nEdgesOnCell(iCell)
+               iEdge=edgesOnCell(i,iCell)
+               edgeSign = edgesOnCell_sign(i,iCell)
 
 !DIR$ IVDEP
                !$acc loop vector
                do k = 2, nVertLevels
                   flux = (fzm(k)*ru(k,iEdge)+fzp(k)*ru(k-1,iEdge))
-                  w(k,iCell) = w(k,iCell) + edgesOnCell_sign(i,iCell) * &
+                  w(k,iCell) = w(k,iCell) + edgeSign * &
                                        (zb_cell(k,i,iCell)+sign(1.0_RKIND,flux)*zb3_cell(k,i,iCell))*flux
                end do
-
             end do
-
-            w(1,iCell) = w(1,iCell)/(cf1*rho_zz(1,iCell)+cf2*rho_zz(2,iCell)+cf3*rho_zz(3,iCell))
-
 
             !DIR$ IVDEP
             !$acc loop vector
@@ -4519,7 +4520,7 @@ module atm_time_integration
               w(k,iCell) = w(k,iCell)/(fzm(k)*rho_zz(k,iCell)+fzp(k)*rho_zz(k-1,iCell))
             end do
 
-         end if ! addition for regional_MPAS, no spec zone update
+         end if
 
       end do
       !$acc end parallel
