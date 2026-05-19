@@ -63,9 +63,10 @@ runs:
       id: summary
       shell: bash
       run: |
+        source .github/ci-config.env
         SUMMARY="${{ steps.config.outputs.summary-file }}"
         TAG="${{ steps.config.outputs.release-tag }}"
-        REPO="${GITHUB_REPOSITORY}"
+        REPO="${DATA_REPOSITORY:-${GITHUB_REPOSITORY}}"
         URL="https://github.com/${REPO}/releases/download/${TAG}/${SUMMARY}"
 
         echo "Downloading ${SUMMARY} from release ${TAG}..."
