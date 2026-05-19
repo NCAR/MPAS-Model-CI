@@ -41,7 +41,7 @@ runs:
           exit 1
         fi
 
-        REPO="${GITHUB_REPOSITORY}"
+        REPO="${DATA_REPOSITORY:-${GITHUB_REPOSITORY}}"
         URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE}"
 
         echo "release-tag=${TAG}" >> $GITHUB_OUTPUT
