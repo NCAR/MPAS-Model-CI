@@ -63,6 +63,7 @@ runs:
       id: summary
       shell: bash
       run: |
+        source .github/ci-config.env
         SUMMARY="${{ steps.config.outputs.summary-file }}"
         TAG="${{ steps.config.outputs.release-tag }}"
         REPO="${DATA_REPOSITORY:-${GITHUB_REPOSITORY}}"
