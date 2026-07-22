@@ -1,0 +1,590 @@
+# Ensemble Consistency Test — Ensemble Generation
+# Generates 200 perturbed MPAS-A simulations on the 120km mesh and produces
+# an ensemble summary file using pyEnsSumMPAS for use with PyCECT.
+#
+# This is expensive (~200 model runs) and should only be triggered manually
+# when there are major version or science changes requiring a new reference ensemble.
+#
+# Reference: Price-Broncucia et al. (2025), doi:10.5194/gmd-18-2349-2025
+
+name: ECT Ensemble Generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpas-repository:
+        description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model). Leave empty to use this repo.'
+        required: false
+        default: ''
+      mpas-ref:
+        description: 'Git ref (branch, tag, or SHA) in the MPAS source repo'
+        required: false
+        default: ''
+      ensemble-size:
+        description: 'Number of ensemble members to generate'
+        type: number
+        required: false
+        default: 200
+      members-per-job:
+        description: 'Number of ensemble members to run per job (batch size)'
+        type: number
+        required: false
+        default: 10
+      num-ranks:
+        description: 'Number of MPI ranks per ensemble member'
+        type: number
+        required: false
+        default: 4
+      compiler:
+        description: 'Compiler suite (gcc or nvhpc)'
+        type: choice
+        options: [gcc, nvhpc]
+        required: false
+        default: 'nvhpc'
+      mpi-impl:
+        description: 'MPI implementation (mpich, openmpi)'
+        type: choice
+        options: [mpich, openmpi]
+        required: false
+        default: 'mpich'
+
+jobs:
+  #===========================================================================
+  # PREPARE: Compute batch matrix
+  #===========================================================================
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      batches: ${{ steps.compute.outputs.batches }}
+      ensemble-size: ${{ steps.compute.outputs.ensemble-size }}
+      container-image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler || 'nvhpc' }}
+          mpi: ${{ inputs.mpi-impl || 'mpich' }}
+
+      - name: Compute batch ranges
+        id: compute
+        run: |
+          ESIZE=${{ inputs.ensemble-size || 200 }}
+          BATCH=${{ inputs.members-per-job || 10 }}
+          echo "ensemble-size=${ESIZE}" >> $GITHUB_OUTPUT
+
+          BATCHES="["
+          for (( start=0; start<ESIZE; start+=BATCH )); do
+            end=$((start + BATCH - 1))
+            if [ $end -ge $ESIZE ]; then
+              end=$((ESIZE - 1))
+            fi
+            if [ "$BATCHES" != "[" ]; then
+              BATCHES="${BATCHES},"
+            fi
+            BATCHES="${BATCHES}{\"start\":${start},\"end\":${end}}"
+          done
+          BATCHES="${BATCHES}]"
+
+          echo "batches=${BATCHES}" >> $GITHUB_OUTPUT
+          echo "Generated batches: ${BATCHES}"
+
+  #===========================================================================
+  # BUILD
+  #===========================================================================
+  build:
+    needs: prepare
+    name: Build MPAS-A (${{ inputs.compiler || 'nvhpc' }}/${{ inputs.mpi-impl || 'mpich' }})
+    runs-on: ubuntu-latest
+    outputs:
+      mpas-version: ${{ steps.version.outputs.mpas-version }}
+      mpas-commit: ${{ steps.version.outputs.mpas-commit }}
+    container:
+      image: ${{ needs.prepare.outputs.container-image }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ inputs.mpas-ref || '' }}
+          submodules: 'true'
+
+      - uses: actions/checkout@v5
+        if: ${{ inputs.mpas-repository != '' }}
+        with:
+          path: _ci
+          sparse-checkout: .github
+
+      - name: Overlay CI infrastructure
+        if: ${{ inputs.mpas-repository != '' }}
+        shell: bash
+        run: cp -r _ci/.github . && rm -rf _ci
+
+      - name: Extract MPAS version
+        id: mpas_version
+        uses: ./.github/actions/mpas-version
+
+      - name: Resolve commit and re-export version
+        id: version
+        shell: bash
+        run: |
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          COMMIT=$(git rev-parse --short=8 HEAD)
+          echo "mpas-version=${{ steps.mpas_version.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "mpas-commit=${COMMIT}" >> $GITHUB_OUTPUT
+
+      - name: Build MPAS-A (double precision)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler || 'nvhpc' }}
+          precision: double
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-ect-ensemble
+          path: atmosphere_model
+          retention-days: 1
+
+  #===========================================================================
+  # SPIN-UP: 24-hour unperturbed run to generate spun-up restart file
+  # Hydrometeor fields (rain, snow, cloud water) are zero in cold-start
+  # init.nc and need time to develop realistic values.
+  # See Price-Broncucia et al. (2025), Section 3.2.
+  #===========================================================================
+  spinup:
+    needs: [prepare, build]
+    name: 24h Spin-up
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare.outputs.container-image }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Restore cached restart
+        id: cache
+        uses: actions/cache/restore@v5
+        with:
+          path: spinup-restart.nc
+          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
+
+      - name: Download executable
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-ect-ensemble
+
+      - name: Make executable
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: chmod +x atmosphere_model
+
+      - name: Run 24h spin-up
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          resolution: 120km
+          num-procs: '4'
+          mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
+          run-duration: '1_00:00:00'
+          restart-interval: '1_00:00:00'
+          run-timeout: '350'
+          strict-exit-check: 'false'
+
+      - name: Verify restart file
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          RESTART=$(ls run-120km/restart.*.nc 2>/dev/null | head -1)
+          if [ -z "${RESTART}" ]; then
+            echo "::error::Spin-up did not produce a restart file"
+            ls -la run-120km/*.nc 2>/dev/null || true
+            exit 1
+          fi
+          echo "Spin-up restart: ${RESTART} ($(du -h ${RESTART} | cut -f1))"
+          cp "${RESTART}" spinup-restart.nc
+
+      - name: Cache restart file
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: spinup-restart.nc
+          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
+
+      - name: Upload restart artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: spinup-restart
+          path: spinup-restart.nc
+          retention-days: 1
+
+  #===========================================================================
+  # RUN: Batched ensemble members
+  #===========================================================================
+  run-ensemble:
+    needs: [prepare, build, spinup]
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: ${{ fromJson(needs.prepare.outputs.batches) }}
+
+    name: Members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.prepare.outputs.container-image }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-ect-ensemble
+
+      - name: Make executable
+        run: chmod +x atmosphere_model
+
+      - name: Download test case
+        uses: ./.github/actions/download-testdata
+        with:
+          resolution: 120km
+          dest-dir: base-case
+
+      - name: Download spin-up restart
+        uses: actions/download-artifact@v7
+        with:
+          name: spinup-restart
+
+      - name: Run ensemble members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
+        uses: ./.github/actions/run-perturb-mpas
+        with:
+          base-dir: base-case
+          executable: ./atmosphere_model
+          member-start: ${{ matrix.batch.start }}
+          member-end: ${{ matrix.batch.end }}
+          num-ranks: ${{ inputs.num-ranks || 4 }}
+          mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
+          run-duration: '0_02:36:00'
+          run-timeout: '45'
+          restart-file: spinup-restart.nc
+
+      - name: Upload history files
+        uses: actions/upload-artifact@v6
+        with:
+          name: ect-ensemble-${{ matrix.batch.start }}-${{ matrix.batch.end }}
+          path: history-output/history.*.nc
+          retention-days: 1
+
+  #===========================================================================
+  # SUMMARY: Generate ensemble summary file with pyEnsSumMPAS
+  # Security: This job only checks out THIS repo (for config/tooling).
+  # The MPAS version and commit come from the build job outputs, so no
+  # external repo code is checked out or executed here.
+  #===========================================================================
+  generate-summary:
+    needs: [prepare, build, run-ensemble]
+    if: always() && needs.run-ensemble.result != 'cancelled'
+    name: Generate Summary
+    runs-on: ubuntu-latest
+    outputs:
+      summary-name: ${{ steps.meta.outputs.summary-name }}
+      summary-prefix: ${{ steps.meta.outputs.summary-prefix }}
+      mpas-version: ${{ steps.meta.outputs.mpas-version }}
+      mpas-repo: ${{ steps.meta.outputs.mpas-repo }}
+      branch: ${{ steps.meta.outputs.branch }}
+      commit: ${{ steps.meta.outputs.commit }}
+      date: ${{ steps.meta.outputs.date }}
+      resolution: ${{ steps.meta.outputs.resolution }}
+      ensemble-size: ${{ steps.meta.outputs.ensemble-size }}
+      compiler: ${{ steps.meta.outputs.compiler }}
+      mpi-impl: ${{ steps.meta.outputs.mpi-impl }}
+      precision: ${{ steps.meta.outputs.precision }}
+      run-duration: ${{ steps.meta.outputs.run-duration }}
+      perturb-magnitude: ${{ steps.meta.outputs.perturb-magnitude }}
+      perturb-variable: ${{ steps.meta.outputs.perturb-variable }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Collect metadata
+        id: meta
+        run: |
+          source .github/ci-config.env
+          ECT_SUMMARY_PREFIX="${ECT_SUMMARY_FILE%.nc}"
+          RUN_DURATION=0_02:36:00
+          VERSION="${{ needs.build.outputs.mpas-version }}"
+          DATE=$(date -u +%Y-%m-%d)
+          SUMMARY_NAME="${ECT_SUMMARY_PREFIX}_v${VERSION}_${DATE//-/}.nc"
+
+          MPAS_REPO="${{ inputs.mpas-repository || github.repository }}"
+          MPAS_BRANCH="${{ inputs.mpas-ref || github.ref_name }}"
+          MPAS_COMMIT="${{ needs.build.outputs.mpas-commit }}"
+
+          echo "mpas-version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "mpas-repo=${MPAS_REPO}" >> $GITHUB_OUTPUT
+          echo "branch=${MPAS_BRANCH}" >> $GITHUB_OUTPUT
+          echo "commit=${MPAS_COMMIT}" >> $GITHUB_OUTPUT
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
+          echo "resolution=${ECT_RESOLUTION}" >> $GITHUB_OUTPUT
+          echo "ensemble-size=${{ needs.prepare.outputs.ensemble-size }}" >> $GITHUB_OUTPUT
+          echo "summary-prefix=${ECT_SUMMARY_PREFIX}" >> $GITHUB_OUTPUT
+          echo "summary-name=${SUMMARY_NAME}" >> $GITHUB_OUTPUT
+          echo "compiler=${{ inputs.compiler || 'nvhpc' }}" >> $GITHUB_OUTPUT
+          echo "mpi-impl=${{ inputs.mpi-impl || 'mpich' }}" >> $GITHUB_OUTPUT
+          echo "precision=double" >> $GITHUB_OUTPUT
+          echo "run-duration=${RUN_DURATION}" >> $GITHUB_OUTPUT
+          echo "perturb-magnitude=${ECT_PERTURB_MAGNITUDE}" >> $GITHUB_OUTPUT
+          echo "perturb-variable=${ECT_PERTURB_VARIABLE}" >> $GITHUB_OUTPUT
+
+          echo "=== ECT Metadata ==="
+          echo "  MPAS repo:    ${MPAS_REPO}"
+          echo "  MPAS version: ${VERSION}"
+          echo "  Branch:       ${MPAS_BRANCH}"
+          echo "  Commit:       ${MPAS_COMMIT}"
+          echo "  Resolution:   ${ECT_RESOLUTION}"
+          echo "  Compiler:     ${{ inputs.compiler || 'nvhpc' }}"
+          echo "  MPI:          ${{ inputs.mpi-impl || 'mpich' }}"
+          echo "  Precision:    double"
+          echo "  Run duration: ${RUN_DURATION}"
+          echo "  Perturbation: ${ECT_PERTURB_MAGNITUDE} (${ECT_PERTURB_VARIABLE})"
+          echo "  Ensemble:     ${{ needs.prepare.outputs.ensemble-size }} members"
+          echo "  Summary:      ${SUMMARY_NAME}"
+
+      - name: Install dependencies
+        run: pip install "numpy<2" scipy netCDF4
+
+      - name: Clone PyCECT
+        run: |
+          source .github/ci-config.env
+          git clone --depth 1 --branch "${PYCECT_TAG}" https://github.com/NCAR/PyCECT.git pycect
+
+      - name: Download all history files
+        uses: actions/download-artifact@v7
+        with:
+          pattern: ect-ensemble-*
+          path: ensemble-files
+          merge-multiple: true
+
+      - name: Validate ensemble files
+        run: |
+          echo "=== Validating ensemble history files ==="
+          GOOD=0
+          BAD=0
+          for f in ensemble-files/history.*.nc; do
+            if python3 -c "import netCDF4; netCDF4.Dataset('$f').close()" 2>/dev/null; then
+              GOOD=$((GOOD + 1))
+            else
+              echo "::warning::Removing corrupted file: $f"
+              rm -f "$f"
+              BAD=$((BAD + 1))
+            fi
+          done
+          echo "Valid: ${GOOD}, Corrupted: ${BAD}"
+          if [ "${GOOD}" -lt 48 ]; then
+            echo "::error::Too few valid ensemble members (${GOOD}). PyCECT needs more members than output variables (~47 after trimming). Recommended: 200."
+            exit 1
+          fi
+
+      - name: Generate ensemble summary
+        run: |
+          SUMMARY_NAME="${{ steps.meta.outputs.summary-name }}"
+          ESIZE=${{ needs.prepare.outputs.ensemble-size }}
+          NFILES=$(ls ensemble-files/history.*.nc 2>/dev/null | wc -l)
+          if [ "${NFILES}" -lt "${ESIZE}" ]; then
+            echo "::warning::Only ${NFILES} of ${ESIZE} requested members available (some may have been removed due to corruption)"
+            ESIZE=${NFILES}
+          fi
+
+          JSONFILE=ect_pycect_exclude.json
+          echo '{"ExcludedVar": []}' > "${JSONFILE}"
+
+          # --tslice 0 is invariant: ensemble files are pre-trimmed to a single
+          # time slice by run-perturb-mpas (trim_history.py creates Time=1).
+          python pycect/pyEnsSumMPAS.py \
+            --esize ${ESIZE} \
+            --indir ensemble-files \
+            --sumfile "${SUMMARY_NAME}" \
+            --tslice 0 \
+            --tag $(date +%Y%m%d) \
+            --model mpas \
+            --mach github-actions \
+            --verbose \
+            --jsonfile ${JSONFILE} \
+            --mpi_disable
+
+          if [ ! -f "${SUMMARY_NAME}" ]; then
+            echo "::error::pyEnsSumMPAS did not produce ${SUMMARY_NAME}."
+            echo "  PyCECT requires ensemble size >= number of output variables (~47 after trimming)."
+            echo "  Current ensemble size: ${ESIZE}. Increase to at least 50 (recommended: 200)."
+            exit 1
+          fi
+
+      - name: Upload summary artifact
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mpas-ect-summary
+          path: ${{ steps.meta.outputs.summary-name }}
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          SUMMARY_NAME="${{ steps.meta.outputs.summary-name }}"
+          echo "=========================================="
+          echo "  ECT Ensemble Summary Generated"
+          echo "=========================================="
+          echo ""
+          echo "  MPAS repo:     ${{ steps.meta.outputs.mpas-repo }}"
+          echo "  MPAS version:  ${{ steps.meta.outputs.mpas-version }}"
+          echo "  Branch:        ${{ steps.meta.outputs.branch }}"
+          echo "  Commit:        ${{ steps.meta.outputs.commit }}"
+          echo "  Resolution:    ${{ steps.meta.outputs.resolution }}"
+          echo "  Compiler:      ${{ steps.meta.outputs.compiler }}/${{ steps.meta.outputs.mpi-impl }}"
+          echo "  Precision:     ${{ steps.meta.outputs.precision }}"
+          echo "  Duration:      ${{ steps.meta.outputs.run-duration }}"
+          echo "  Perturbation:  ${{ steps.meta.outputs.perturb-magnitude }} (${{ steps.meta.outputs.perturb-variable }})"
+          echo "  Ensemble size: ${{ steps.meta.outputs.ensemble-size }}"
+          echo "  Date:          ${{ steps.meta.outputs.date }}"
+          echo ""
+          if [ -f "${SUMMARY_NAME}" ]; then
+            echo "  File: ${SUMMARY_NAME}"
+            echo "  Size: $(du -h "${SUMMARY_NAME}" | cut -f1)"
+          fi
+
+  #===========================================================================
+  # PUBLISH RESTART: Upload spin-up restart to ect-v{MPAS_VERSION}
+  # Runs after spinup regardless of ensemble/summary outcome.
+  # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
+  #===========================================================================
+  publish-restart:
+    needs: [build, spinup]
+    name: Publish Restart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/ci-config.env
+          sparse-checkout-cone-mode: false
+
+      - name: Download restart artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: spinup-restart
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source .github/ci-config.env
+          VERSION="${{ needs.build.outputs.mpas-version }}"
+          TAG="ect-v${VERSION}"
+
+          # Create release if it doesn't exist
+          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Creating release ${TAG}..."
+            gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --title "ECT data (MPAS v${VERSION})" \
+              --notes "ECT ensemble summary and spin-up restart for MPAS v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
+          fi
+
+          RESTART_NAME="${ECT_RESTART_FILE}"
+          mv spinup-restart.nc "${RESTART_NAME}"
+
+          echo "Compressing ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))..."
+          gzip -1 "${RESTART_NAME}"
+
+          gh release upload "${TAG}" "${RESTART_NAME}.gz" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+
+          echo "=== Published restart to release ${TAG} ==="
+          echo "  File: ${RESTART_NAME}.gz ($(du -h "${RESTART_NAME}.gz" | cut -f1))"
+
+  #===========================================================================
+  # PUBLISH SUMMARY: Upload ensemble summary to ect-v{MPAS_VERSION}
+  # Only runs when summary generation succeeds.
+  # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
+  #===========================================================================
+  publish-summary:
+    needs: [build, generate-summary]
+    if: needs.generate-summary.result == 'success'
+    name: Publish Summary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/ci-config.env
+          sparse-checkout-cone-mode: false
+
+      - name: Download summary artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: mpas-ect-summary
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source .github/ci-config.env
+          VERSION="${{ needs.build.outputs.mpas-version }}"
+          TAG="ect-v${VERSION}"
+
+          # Create release if it doesn't exist
+          if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Creating release ${TAG}..."
+            gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --title "ECT data (MPAS v${VERSION})" \
+              --notes "ECT ensemble summary and spin-up restart for MPAS v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
+          fi
+
+          SUMMARY_NAME="${{ needs.generate-summary.outputs.summary-name }}"
+          SUMMARY_PREFIX="${{ needs.generate-summary.outputs.summary-prefix }}"
+          CURRENT_SUMMARY="${SUMMARY_PREFIX}.nc"
+          cp "${SUMMARY_NAME}" "${CURRENT_SUMMARY}"
+
+          gh release upload "${TAG}" "${CURRENT_SUMMARY}" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+
+          echo "=== Published summary to release ${TAG} ==="
+          echo "  File: ${CURRENT_SUMMARY}"
+
+  #===========================================================================
+  # CLEANUP
+  # Only runs on a fully successful workflow. On any failure (batch, summary,
+  # or publish), every artifact is retained until retention-days expires so
+  # `gh run rerun --failed` can find the executable, spin-up restart, and
+  # per-batch history files it needs to recover.
+  #===========================================================================
+  cleanup:
+    needs: [run-ensemble, generate-summary, publish-restart, publish-summary]
+    if: needs.publish-summary.result == 'success'
+    runs-on: ubuntu-latest
+    name: Cleanup
+
+    steps:
+      - name: Delete build and ensemble artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name == "exe-ect-ensemble" or .name == "spinup-restart" or (.name | startswith("ect-ensemble-"))) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true

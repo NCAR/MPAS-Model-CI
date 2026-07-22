@@ -1,0 +1,20 @@
+# BFB on GPU: two I/O builds (SMIOL vs PIO), same MPI rank count.
+# CIRRUS self-hosted runners — trigger via workflow_dispatch only (see _test-gpu.yml).
+
+name: "BFB: I/O GPU (SMIOL vs PIO)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-bfb.yml
+    with:
+      compiler: nvhpc
+      mpi: mpich
+      gpu: 'true'
+      precision: single
+      run-timeout: '20'
+      variants: >-
+        [{"id":"smiol-r4","ranks":4,"label":"SMIOL, 4 ranks"},
+         {"id":"pio-r4","use_pio":true,"ranks":4,"label":"PIO, 4 ranks"}]

@@ -1,0 +1,237 @@
+# Ensemble Consistency Test (ECT)
+# Runs 3 perturbed MPAS-A simulations on the 120km mesh and compares
+# against a pre-built ensemble summary file using PyCECT.
+#
+# This test detects statistically meaningful changes in model output
+# that go beyond internal variability (non-BFB but scientifically equivalent
+# changes will pass). Run this on code changes NOT expected to change science.
+#
+# Reference: Price-Broncucia et al. (2025), doi:10.5194/gmd-18-2349-2025
+
+name: Ensemble Consistency Test (ECT)
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      mpas-repository:
+        description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model). Leave empty to use this repo.'
+        required: false
+        default: ''
+      mpas-ref:
+        description: 'Git ref (branch, tag, or SHA) in the MPAS source repo'
+        required: false
+        default: ''
+
+jobs:
+  #===========================================================================
+  # CONFIG: Resolve container image from ci-config.env
+  #===========================================================================
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+      mpas-version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github
+            src/core_atmosphere/Registry.xml
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: openmpi
+      - uses: ./.github/actions/mpas-version
+        id: version
+
+  #===========================================================================
+  # BUILD
+  #===========================================================================
+  build:
+    needs: config
+    name: Build MPAS-A
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ inputs.mpas-ref || '' }}
+          submodules: 'true'
+
+      - uses: actions/checkout@v5
+        if: ${{ inputs.mpas-repository != '' }}
+        with:
+          path: _ci
+          sparse-checkout: .github
+
+      - name: Overlay CI infrastructure
+        if: ${{ inputs.mpas-repository != '' }}
+        shell: bash
+        run: cp -r _ci/.github . && rm -rf _ci
+
+      - name: Build MPAS-A (double precision)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: gcc
+          precision: double
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-ect
+          path: atmosphere_model
+          retention-days: 1
+
+  #===========================================================================
+  # RUN: 3 perturbed ensemble members
+  #===========================================================================
+  run:
+    needs: [config, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        member: [0, 1, 2]
+
+    name: ECT member ${{ matrix.member }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-ect
+
+      - name: Download test case
+        uses: ./.github/actions/download-testdata
+        with:
+          resolution: 120km
+          dest-dir: base-case
+
+      - name: Restore cached restart
+        id: cache-restart
+        uses: actions/cache/restore@v5
+        with:
+          path: spinup-restart.nc
+          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
+
+      - name: Download spin-up restart
+        id: restart
+        shell: bash
+        run: |
+          source .github/ci-config.env
+          RESTART="${ECT_RESTART_FILE}"
+          RELEASE_TAG="ect-v${{ needs.config.outputs.mpas-version }}"
+
+          if [ -f "spinup-restart.nc" ]; then
+            echo "Using cached restart file"
+            mv spinup-restart.nc "${RESTART}"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Downloading ${RESTART}.gz from release ${RELEASE_TAG}..."
+          HTTP_CODE=$(curl -sL --retry 3 --retry-delay 5 -w "%{http_code}" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${RESTART}.gz" \
+            -o "${RESTART}.gz")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            gunzip "${RESTART}.gz"
+            echo "Downloaded restart: $(du -h ${RESTART})"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Spin-up restart not available (HTTP ${HTTP_CODE}), running from cold-start init.nc"
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run perturbed MPAS-A
+        uses: ./.github/actions/run-perturb-mpas
+        with:
+          base-dir: base-case
+          executable: ./atmosphere_model
+          member-start: ${{ matrix.member }}
+          member-end: ${{ matrix.member }}
+          run-duration: '0_02:36:00'
+          run-timeout: '45'
+          restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
+
+      - name: Upload history file
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ect-history-${{ matrix.member }}
+          path: history-output/history.*.nc
+          retention-days: 1
+
+      - name: Upload log files
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ect-logs-${{ matrix.member }}
+          path: history-output/log.*.out
+          retention-days: 5
+
+  #===========================================================================
+  # VALIDATE: Run PyCECT against ensemble summary
+  #===========================================================================
+  validate:
+    needs: [config, run]
+    if: always()
+    name: PyCECT Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Download history files
+        uses: actions/download-artifact@v7
+        with:
+          pattern: ect-history-*
+          path: ect-test-files
+          merge-multiple: true
+
+      - name: Run ECT validation
+        uses: ./.github/actions/validate-ect
+        with:
+          history-dir: ect-test-files
+          label: gcc/openmpi/ect-standalone
+          mpas-version: ${{ needs.config.outputs.mpas-version }}
+
+  #===========================================================================
+  # CLEANUP
+  #===========================================================================
+  cleanup:
+    needs: [run, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+
+    steps:
+      - name: Delete build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name == "exe-ect") | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true
