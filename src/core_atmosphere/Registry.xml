@@ -101,10 +101,10 @@
                      description="Whether to super-cycle scalar transport"
                      possible_values="Logical values"/>
 
-                <nml_option name="config_number_of_sub_steps" type="integer" default_value="2"
+                <nml_option name="config_number_of_sub_steps" type="integer" default_value="4"
                      units="-"
                      description="Number of acoustic steps per full RK step"
-                     possible_values="Positive, even integer values, typically 2 or 6 depending on transport splitting"/>
+                     possible_values="Positive, even integer values, typically 2, 4, or 6 depending on transport splitting"/>
 
                 <nml_option name="config_dynamics_split_steps" type="integer" default_value="3"
                      units="-"
