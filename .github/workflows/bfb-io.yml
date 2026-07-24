@@ -1,0 +1,19 @@
+# Example BFB caller: two I/O builds (SMIOL vs PIO), same rank count.
+# Add new scenarios by copying this file and editing `variants` (see `_test-bfb.yml` and `.github/ci-config.env` BFB_*).
+
+name: "BFB: I/O (SMIOL vs PIO)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [hackathon, 'hackathon/**', 'hackathon-*', feature-ci-bfb]
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-bfb.yml
+    with:
+      compiler: gcc
+      mpi: mpich
+      variants: >-
+        [{"id":"smiol-r4","ranks":4,"label":"SMIOL, 4 ranks"},
+         {"id":"pio-r4","use_pio":true,"ranks":4,"label":"PIO, 4 ranks"}]

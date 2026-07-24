@@ -1,0 +1,194 @@
+# Nsight Systems GPU profiling on CIRRUS (keep to very short runs)
+
+name: GPU Nsight (profile)
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpi:
+        description: MPI implementation
+        required: true
+        default: mpich
+        type: choice
+        options:
+          - mpich
+          - openmpi
+      resolution:
+        description: Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)
+        required: false
+        default: '240km'
+        type: string
+      num_procs:
+        description: MPI rank count
+        required: false
+        default: '4'
+        type: string
+      run_duration:
+        description: config_run_duration
+        required: false
+        default: '0_01:00:00'
+        type: string
+      run_timeout_minutes:
+        description: Wall-clock timeout for mpirun + nsys
+        required: false
+        default: '40'
+        type: string
+
+jobs:
+  config:
+    name: Resolve CUDA container
+    runs-on: ubuntu-latest
+    outputs:
+      image-gpu: ${{ steps.gpu-container.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: gpu-container
+        with:
+          compiler: nvhpc
+          mpi: ${{ inputs.mpi }}
+          gpu: cuda
+
+  build:
+    needs: config
+    name: Build (cuda, ${{ inputs.mpi }})
+    runs-on:
+      group: CIRRUS-4x8-gpu
+    container:
+      image: ${{ needs.config.outputs.image-gpu }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A (double precision, OpenACC)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: nvhpc
+          use-pio: 'false'
+          openacc: 'true'
+          precision: double
+          build-timeout: '45'
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-profile-nsight-${{ inputs.mpi }}
+          path: atmosphere_model
+          retention-days: 1
+
+  profile:
+    needs: [config, build]
+    if: ${{ needs.build.result == 'success' }}
+    name: Nsight profile (${{ inputs.mpi }})
+    runs-on:
+      group: CIRRUS-4x8-gpu
+    container:
+      image: ${{ needs.config.outputs.image-gpu }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: GPU check
+        shell: bash
+        run: |
+          echo "## GPU" >> "$GITHUB_STEP_SUMMARY"
+          nvidia-smi || echo "::warning::nvidia-smi failed"
+          nvidia-smi || true
+
+      - name: Setup Nsight Systems CLI (install + RPM cache)
+        uses: ./.github/actions/setup-nsight-systems
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-profile-nsight-${{ inputs.mpi }}
+
+      - name: Download test case
+        uses: ./.github/actions/download-testdata
+        with:
+          resolution: ${{ inputs.resolution }}
+          dest-dir: nsight-case
+
+      - name: Link executable and config_run_duration (dt unchanged)
+        shell: bash
+        run: |
+          chmod +x atmosphere_model
+          ln -sf "$(pwd)/atmosphere_model" nsight-case/atmosphere_model
+          DURATION="${{ inputs.run_duration }}"
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${DURATION}'/" nsight-case/namelist.atmosphere
+          echo "config_run_duration -> ${DURATION} (config_dt left as in test case)"
+          grep -E 'config_dt|config_run_duration' nsight-case/namelist.atmosphere | head -n 5 || true
+
+      - name: Run nsys profile
+        shell: bash
+        run: |
+          chmod +x .github/scripts/run-nsys-profile.sh
+          bash .github/scripts/run-nsys-profile.sh \
+            nsight-case \
+            "${{ inputs.num_procs }}" \
+            "${{ inputs.mpi }}" \
+            "${{ inputs.run_timeout_minutes }}" \
+            nsys-profile
+
+      - name: nsys stats (text)
+        shell: bash
+        working-directory: nsight-case
+        run: |
+          if [ -f /container/config_env.sh ]; then
+            source /container/config_env.sh
+          fi
+          source "${GITHUB_WORKSPACE}/.github/scripts/resolve-nsys.sh"
+          if ! resolve_nsys; then
+            echo "::warning::No working nsys; skipping nsys stats generation"
+            exit 0
+          fi
+          echo "Using nsys: ${NSYS_BIN}"
+          shopt -s nullglob
+          REP=""
+          for f in nsys-profile.nsys-rep *.nsys-rep *.qdrep; do
+            if [ -f "$f" ]; then
+              REP="$f"
+              break
+            fi
+          done
+          if [ -z "${REP}" ]; then
+            echo "::warning::No Nsight session file found for nsys stats"
+            ls -la
+            exit 0
+          fi
+          echo "=== nsys stats (full log → nsys-profile-stats.txt; first 200 lines below) ==="
+          "${NSYS_BIN}" stats "${REP}" > "nsys-profile-stats.txt" 2>&1 || true
+          head -n 200 nsys-profile-stats.txt
+
+      - name: Job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Nsight profile"
+            echo "- MPI: ${{ inputs.mpi }}"
+            echo "- Resolution: ${{ inputs.resolution }}"
+            echo "- Ranks: ${{ inputs.num_procs }}"
+            echo "- config_run_duration: ${{ inputs.run_duration }}"
+            echo ""
+            echo "Session files and \`nsys stats\` text are uploaded as artifacts (short retention)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Nsight artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nsys-profile-${{ github.run_id }}-${{ inputs.mpi }}
+          path: |
+            nsight-case/nsys-profile.*
+            nsight-case/nsys-profile-stats.txt
+          retention-days: 3
+          if-no-files-found: warn
