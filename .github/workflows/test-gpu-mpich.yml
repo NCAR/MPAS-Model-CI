@@ -1,0 +1,15 @@
+# Subset CI: NVHPC + MPICH (GPU vs CPU)
+# Runs on CIRRUS self-hosted runners with GPU access.
+# workflow_dispatch only — no push/pull_request (self-hosted security).
+
+name: "NVHPC+MPICH (GPU)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-gpu.yml
+    with:
+      mpi: mpich
+

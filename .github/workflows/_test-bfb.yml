@@ -1,0 +1,427 @@
+# Reusable workflow: bit-for-bit reproducibility tests.
+#
+# Callers pass a JSON array of *variants*: independent run configurations that must
+# produce bitwise-identical history variable data. The first variant (or
+# reference_index) is the reference; every other variant is compared against it.
+#
+# Optional input `gpu: 'true'`: all variants use CUDA image + OpenACC + CIRRUS (nvhpc only).
+# Alternatively set `gpu: 'false'` and add per-variant `"openacc": true|false` to mix
+# CPU (GitHub-hosted) and GPU (CIRRUS) NVHPC builds in one comparison.
+#
+# MPI rank count and PIO vs SMIOL are common dimensions but not special — add any
+# new scenario by appending another variant object (and a small caller workflow).
+
+name: _test-bfb
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler family for the container image (gcc, nvhpc, oneapi)'
+        required: true
+        type: string
+      mpi:
+        description: 'MPI implementation for the container image (mpich, openmpi)'
+        required: true
+        type: string
+      variants:
+        description: >
+          JSON array of at least two variant objects. Required per variant: id (unique slug),
+          ranks (MPI processes). Optional: use_pio (default false), openacc (default follows gpu input),
+          label (summary text), resolution, run_duration (override workflow defaults for that variant only).
+        required: true
+        type: string
+      resolution:
+        description: 'Default test case resolution when a variant omits resolution'
+        required: false
+        type: string
+        default: '240km'
+      precision:
+        description: 'Floating-point precision for all builds (single or double)'
+        required: false
+        type: string
+        default: 'single'
+      run-duration:
+        description: 'Default model run duration (D_HH:MM:SS) when a variant omits run_duration'
+        required: false
+        type: string
+        default: '0_01:00:00'
+      run-timeout:
+        description: 'Run step timeout in minutes'
+        required: false
+        type: string
+        default: '10'
+      reference_index:
+        description: 'Which variant (0-based) is the reference for comparison'
+        required: false
+        type: number
+        default: 0
+      gpu:
+        description: 'If true, CUDA image + OpenACC build + CIRRUS GPU runners (requires compiler nvhpc). Same security model as _test-gpu — use workflow_dispatch only.'
+        required: false
+        type: string
+        default: 'false'
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      build_matrix: ${{ steps.matrices.outputs.build_matrix }}
+      run_variants: ${{ steps.matrices.outputs.run_variants }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - name: Validate GPU BFB inputs
+        if: ${{ inputs.gpu == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.compiler }}" != "nvhpc" ]; then
+            echo "::error::gpu=true requires compiler=nvhpc (got ${{ inputs.compiler }})"
+            exit 1
+          fi
+
+      - name: Parse variants
+        id: parse
+        shell: bash
+        env:
+          VARIANTS_JSON: ${{ inputs.variants }}
+          REF_IDX: ${{ inputs.reference_index }}
+        run: |
+          set -euo pipefail
+          RI="${REF_IDX:-0}"
+          echo "${VARIANTS_JSON}" | jq -e 'type == "array" and length >= 2' >/dev/null \
+            || { echo "::error::variants must be a JSON array with at least two entries"; exit 1; }
+          echo "${VARIANTS_JSON}" | jq -e 'all(.[]; has("id") and has("ranks"))' >/dev/null \
+            || { echo "::error::each variant must include id and ranks"; exit 1; }
+          echo "${VARIANTS_JSON}" | jq -e 'all(.[]; .id | test("^[a-zA-Z0-9._-]+$"))' >/dev/null \
+            || { echo "::error::variant id must match ^[a-zA-Z0-9._-]+$"; exit 1; }
+          N=$(echo "${VARIANTS_JSON}" | jq 'length')
+          if [ "${RI}" -lt 0 ] || [ "${RI}" -ge "${N}" ]; then
+            echo "::error::reference_index must be between 0 and $((N - 1))"
+            exit 1
+          fi
+
+          GDEF_JSON='false'
+          [ "${{ inputs.gpu }}" = "true" ] && GDEF_JSON='true'
+          NEED_CUDA=$(echo "${VARIANTS_JSON}" | jq -r --argjson gdef "${GDEF_JSON}" 'any(.[]; (.openacc // $gdef))')
+          echo "need_cuda=${NEED_CUDA}" >> "$GITHUB_OUTPUT"
+
+      - name: Require nvhpc for OpenACC variants
+        if: ${{ steps.parse.outputs.need_cuda == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.compiler }}" != "nvhpc" ]; then
+            echo "::error::OpenACC variants require compiler=nvhpc (got ${{ inputs.compiler }})"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/resolve-container
+        id: container_cpu
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+          gpu: ''
+
+      - uses: ./.github/actions/resolve-container
+        id: container_cuda
+        if: ${{ steps.parse.outputs.need_cuda == 'true' }}
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+          gpu: cuda
+
+      - name: Compute build and run matrices
+        id: matrices
+        shell: bash
+        env:
+          VARIANTS_JSON: ${{ inputs.variants }}
+          DEF_RES: ${{ inputs.resolution }}
+          DEF_DUR: ${{ inputs.run-duration }}
+          CPU_IMG: ${{ steps.container_cpu.outputs.image }}
+          CUDA_IMG: ${{ steps.container_cuda.outputs.image }}
+        run: |
+          set -euo pipefail
+          GDEF_JSON='false'
+          [ "${{ inputs.gpu }}" = "true" ] && GDEF_JSON='true'
+
+          if [ "${{ steps.parse.outputs.need_cuda }}" = "true" ] && [ -z "${CUDA_IMG}" ]; then
+            echo "::error::CUDA container image missing but OpenACC variants are present"
+            exit 1
+          fi
+
+          MIXED=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
+            '([.[] | (.openacc // $gdef)] | unique | length) > 1')
+
+          BUILD_MATRIX=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
+            --argjson mixed "${MIXED}" --arg cpuimg "${CPU_IMG}" --arg cudaimg "${CUDA_IMG}" '
+            [.[] | {
+              build_tag: (if (.use_pio // false) then "pio" else "smiol" end),
+              openacc: (.openacc // $gdef)
+            }]
+            | unique_by("\(.build_tag)-\(.openacc)")
+            | map(. + {
+                image: (if .openacc then $cudaimg else $cpuimg end),
+                artifact_name: (
+                  if $mixed then
+                    ("exe-bfb-" + .build_tag + "-" + (if .openacc then "openacc" else "cpu" end))
+                  else
+                    ("exe-bfb-" + .build_tag)
+                  end
+                )
+              })
+          ')
+
+          RUN_VARIANTS=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
+            --argjson mixed "${MIXED}" --arg cpuimg "${CPU_IMG}" --arg cudaimg "${CUDA_IMG}" \
+            --arg defres "${DEF_RES}" --arg defdur "${DEF_DUR}" \
+            '[.[] |
+              (if (.use_pio // false) then "pio" else "smiol" end) as $bt |
+              (.openacc // $gdef) as $oa |
+              {
+                id,
+                build_tag: $bt,
+                openacc: $oa,
+                ranks: (.ranks | tonumber),
+                resolution: (.resolution // $defres),
+                run_duration: (.run_duration // $defdur),
+                label: (.label // .id),
+                image: (if $oa then $cudaimg else $cpuimg end),
+                artifact_name: (
+                  if $mixed then
+                    ("exe-bfb-" + $bt + "-" + (if $oa then "openacc" else "cpu" end))
+                  else
+                    ("exe-bfb-" + $bt)
+                  end
+                )
+              }
+            ]')
+
+          echo "build_matrix=${BUILD_MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "run_variants=${RUN_VARIANTS}" >> "$GITHUB_OUTPUT"
+          echo "mixed_openacc_modes=${MIXED}" >> "$GITHUB_OUTPUT"
+          echo "Build matrix: ${BUILD_MATRIX}"
+          echo "Run matrix: ${RUN_VARIANTS}"
+
+  build:
+    needs: config
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.build_matrix) }}
+    name: Build (${{ matrix.build_tag }}, ${{ matrix.openacc && 'openacc' || 'cpu' }})
+    runs-on: ${{ matrix.openacc && fromJSON('{"group":"CIRRUS-4x8-gpu"}') || 'ubuntu-latest' }}
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          use-pio: ${{ matrix.build_tag == 'pio' && 'true' || 'false' }}
+          openacc: ${{ matrix.openacc && 'true' || 'false' }}
+          precision: ${{ inputs.precision }}
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: [config, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.run_variants) }}
+    name: Run (${{ matrix.id }})
+    runs-on: ${{ matrix.openacc && fromJSON('{"group":"CIRRUS-4x8-gpu"}') || 'ubuntu-latest' }}
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+
+      - name: Check GPU availability
+        if: ${{ matrix.openacc }}
+        run: |
+          echo "=== GPU Information ==="
+          nvidia-smi || echo "WARNING: nvidia-smi failed"
+
+      - name: Run MPAS-A
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ matrix.ranks }}'
+          resolution: ${{ matrix.resolution }}
+          run-duration: ${{ matrix.run_duration }}
+          run-timeout: ${{ inputs.run-timeout }}
+          mpi-impl: ${{ inputs.mpi }}
+          working-dir: run-${{ matrix.id }}
+          strict-exit-check: 'false'
+
+      - name: Upload history output
+        uses: actions/upload-artifact@v6
+        with:
+          name: bfb-history-${{ matrix.id }}
+          path: run-${{ matrix.id }}/history.*.nc
+          retention-days: 1
+
+  compare:
+    needs: [config, run]
+    if: ${{ !cancelled() && needs.run.result == 'success' }}
+    name: Compare BFB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - name: Download all history files
+        uses: actions/download-artifact@v7
+        with:
+          pattern: bfb-history-*
+          path: bfb-results
+          merge-multiple: false
+
+      - name: Compare outputs
+        env:
+          VARIANTS_JSON: ${{ inputs.variants }}
+          REFERENCE_INDEX: ${{ inputs.reference_index }}
+        shell: bash
+        run: |
+          pip install --quiet netCDF4 numpy
+
+          RI="${REFERENCE_INDEX:-0}"
+
+          MERGED=$(echo "${VARIANTS_JSON}" | jq -c \
+            --arg defres "${{ inputs.resolution }}" \
+            --arg defdur "${{ inputs.run-duration }}" \
+            '[.[] | {
+              id,
+              build_tag: (if (.use_pio // false) then "pio" else "smiol" end),
+              ranks: (.ranks | tonumber),
+              resolution: (.resolution // $defres),
+              run_duration: (.run_duration // $defdur),
+              label: (.label // .id)
+            }]')
+
+          REF_ID=$(echo "${MERGED}" | jq -r --argjson idx "${RI}" '.[$idx].id')
+          REF_LABEL=$(echo "${MERGED}" | jq -r --argjson idx "${RI}" '.[$idx].label')
+
+          echo "## Bit-for-Bit Comparison" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reference variant: **${REF_LABEL}** (\`${REF_ID}\`)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          PASS=0
+          FAIL=0
+          ERRORS=""
+
+          REF_DIR="bfb-results/bfb-history-${REF_ID}"
+          REF_FILE=$(ls ${REF_DIR}/history.*.nc 2>/dev/null | head -1)
+          if [ -z "${REF_FILE}" ]; then
+            echo "::error::Reference history file not found in ${REF_DIR}"
+            find bfb-results -name '*.nc' -type f
+            exit 1
+          fi
+          echo "Reference file: ${REF_FILE}"
+
+          compare_files() {
+            local label="$1"
+            local test_file="$2"
+            local ref_file="$3"
+
+            if [ ! -f "${test_file}" ]; then
+              echo "::error::${label}: history file missing"
+              ERRORS="${ERRORS}\n- **${label}**: :x: history file missing"
+              FAIL=$((FAIL + 1))
+              return
+            fi
+
+            if cmp -s "${ref_file}" "${test_file}"; then
+              echo "${label}: byte-identical"
+              echo "- **${label}**: :white_check_mark: byte-identical" >> "$GITHUB_STEP_SUMMARY"
+              PASS=$((PASS + 1))
+              return
+            fi
+
+            # compare-bfb-nc.py exits 1 on mismatch; with `set -e`, command substitution
+            # would abort before STATUS/DETAIL are handled — temporarily disable -e.
+            set +e
+            RESULT=$(python3 "${GITHUB_WORKSPACE}/.github/scripts/compare-bfb-nc.py" "${ref_file}" "${test_file}")
+            STATUS=$?
+            set -e
+            IFS=$'\t' read -r CODE DETAIL <<< "${RESULT}"
+
+            if [ "${STATUS}" -eq 0 ] && [ "${CODE}" = "OK" ]; then
+              echo "${label}: data-identical (${DETAIL})"
+              echo "- **${label}**: :white_check_mark: data-identical (${DETAIL})" >> "$GITHUB_STEP_SUMMARY"
+              PASS=$((PASS + 1))
+            else
+              echo "${label}: DIFFER — ${DETAIL}"
+              FAIL=$((FAIL + 1))
+              ERRORS="${ERRORS}\n- **${label}**: :x: ${DETAIL}"
+            fi
+          }
+
+          N=$(echo "${MERGED}" | jq 'length')
+          for ((i = 0; i < N; i++)); do
+            VID=$(echo "${MERGED}" | jq -r --argjson idx "$i" '.[$idx].id')
+            if [ "${VID}" = "${REF_ID}" ]; then
+              continue
+            fi
+            VLABEL=$(echo "${MERGED}" | jq -r --argjson idx "$i" '.[$idx].label')
+            DIR="bfb-results/bfb-history-${VID}"
+            TEST_FILE=$(ls ${DIR}/history.*.nc 2>/dev/null | head -1)
+            compare_files "${VLABEL} (\`${VID}\`)" "${TEST_FILE}" "${REF_FILE}"
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${ERRORS}" ]; then
+            echo -e "${ERRORS}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          TOTAL=$((PASS + FAIL))
+          echo "**Result: ${PASS}/${TOTAL} comparisons identical**" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ${FAIL} -gt 0 ]; then
+            echo "::error::BFB comparison failed: ${FAIL} of ${TOTAL} comparisons differ"
+            exit 1
+          fi
+          echo "All ${TOTAL} comparisons passed (byte-identical files or bitwise-identical variable data)"
+
+  cleanup:
+    needs: [run, compare]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+    steps:
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-bfb-") or startswith("bfb-history-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true

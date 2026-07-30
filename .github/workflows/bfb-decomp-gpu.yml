@@ -1,0 +1,20 @@
+# BFB on GPU: same OpenACC/CUDA build, different MPI rank counts (decomposition).
+# CIRRUS self-hosted runners — trigger via workflow_dispatch only (see _test-gpu.yml).
+
+name: "BFB: Decomposition GPU (1 vs 4 ranks)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-bfb.yml
+    with:
+      compiler: nvhpc
+      mpi: mpich
+      gpu: 'true'
+      precision: single
+      run-timeout: '20'
+      variants: >-
+        [{"id":"r1","ranks":1,"label":"1 rank"},
+         {"id":"r4","ranks":4,"label":"4 ranks"}]
