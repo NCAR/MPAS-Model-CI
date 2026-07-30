@@ -1,0 +1,200 @@
+!-----------------------------------------------------------------------
+! Unit tests for mpas_spline_interpolation module
+!
+! Tests cubic spline and linear interpolation routines against
+! known analytic functions. Adapted from the testing patterns in
+! ESCOMP/CAM-SIMA MPAS dynamical core CI.
+!-----------------------------------------------------------------------
+
+module test_spline_interpolation
+
+  use funit
+  use mpas_kind_types, only: RKIND
+  use mpas_spline_interpolation, only: &
+    mpas_cubic_spline_coefficients, &
+    mpas_interpolate_cubic_spline, &
+    mpas_integrate_cubic_spline, &
+    mpas_interpolate_linear
+
+  implicit none
+
+  real(kind=RKIND), parameter :: tol = 1.0e-10_RKIND
+
+contains
+
+  !---------------------------------------------------------------------
+  ! Linear interpolation tests
+  !---------------------------------------------------------------------
+
+  @test
+  subroutine test_linear_interp_identity()
+    ! Interpolating at the same nodes should return the original values.
+    ! mpas_interpolate_linear uses strict < on x(kIn+1), so it cannot
+    ! interpolate at x(n). We test n-1 interior+left-boundary nodes.
+    integer, parameter :: n = 5
+    real(kind=RKIND) :: x(n), y(n), xOut(n-1), yOut(n-1)
+    integer :: i
+
+    x = [1.0_RKIND, 2.0_RKIND, 3.0_RKIND, 4.0_RKIND, 5.0_RKIND]
+    y = [10.0_RKIND, 20.0_RKIND, 30.0_RKIND, 40.0_RKIND, 50.0_RKIND]
+    xOut = x(1:n-1)
+
+    call mpas_interpolate_linear(x, y, n, xOut, yOut, n-1)
+
+    do i = 1, n-1
+      @assertEqual(y(i), yOut(i), tol)
+    end do
+  end subroutine test_linear_interp_identity
+
+  @test
+  subroutine test_linear_interp_midpoints()
+    ! Midpoint interpolation of a linear function should be exact
+    integer, parameter :: n = 3, nOut = 2
+    real(kind=RKIND) :: x(n), y(n), xOut(nOut), yOut(nOut)
+
+    x = [0.0_RKIND, 1.0_RKIND, 2.0_RKIND]
+    y = [0.0_RKIND, 2.0_RKIND, 4.0_RKIND]
+    xOut = [0.5_RKIND, 1.5_RKIND]
+
+    call mpas_interpolate_linear(x, y, n, xOut, yOut, nOut)
+
+    @assertEqual(1.0_RKIND, yOut(1), tol)
+    @assertEqual(3.0_RKIND, yOut(2), tol)
+  end subroutine test_linear_interp_midpoints
+
+  @test
+  subroutine test_linear_interp_quadratic_function()
+    ! Linear interpolation of y = x^2 at midpoints
+    integer, parameter :: n = 5, nOut = 4
+    real(kind=RKIND) :: x(n), y(n), xOut(nOut), yOut(nOut)
+    real(kind=RKIND) :: expected
+    integer :: i
+
+    x = [0.0_RKIND, 1.0_RKIND, 2.0_RKIND, 3.0_RKIND, 4.0_RKIND]
+    y = [0.0_RKIND, 1.0_RKIND, 4.0_RKIND, 9.0_RKIND, 16.0_RKIND]
+    xOut = [0.5_RKIND, 1.5_RKIND, 2.5_RKIND, 3.5_RKIND]
+
+    call mpas_interpolate_linear(x, y, n, xOut, yOut, nOut)
+
+    ! Linear interpolation of x^2 at midpoints: (x_i^2 + x_{i+1}^2) / 2
+    do i = 1, nOut
+      expected = (x(i)**2 + x(i+1)**2) / 2.0_RKIND
+      @assertEqual(expected, yOut(i), tol)
+    end do
+  end subroutine test_linear_interp_quadratic_function
+
+  !---------------------------------------------------------------------
+  ! Cubic spline tests
+  !---------------------------------------------------------------------
+
+  @test
+  subroutine test_cubic_spline_linear_function()
+    ! Cubic spline of a linear function should have zero second derivatives
+    integer, parameter :: n = 5
+    real(kind=RKIND) :: x(n), y(n), y2(n)
+
+    x = [1.0_RKIND, 2.0_RKIND, 3.0_RKIND, 4.0_RKIND, 5.0_RKIND]
+    y = [2.0_RKIND, 4.0_RKIND, 6.0_RKIND, 8.0_RKIND, 10.0_RKIND]
+
+    call mpas_cubic_spline_coefficients(x, y, n, y2)
+
+    @assertEqual(0.0_RKIND, y2(1), tol)
+    @assertEqual(0.0_RKIND, y2(n), tol)
+  end subroutine test_cubic_spline_linear_function
+
+  @test
+  subroutine test_cubic_spline_reproduces_nodes()
+    ! Interpolating at the original nodes should return the original values.
+    ! mpas_interpolate_cubic_spline uses strict < on x(kIn+1), so it cannot
+    ! interpolate at x(n). We test n-1 interior+left-boundary nodes.
+    integer, parameter :: n = 6
+    real(kind=RKIND) :: x(n), y(n), y2(n)
+    real(kind=RKIND) :: xOut(n-1), yOut(n-1)
+    integer :: i
+
+    x = [0.0_RKIND, 1.0_RKIND, 2.0_RKIND, 3.0_RKIND, 4.0_RKIND, 5.0_RKIND]
+    do i = 1, n
+      y(i) = sin(x(i))
+    end do
+    xOut = x(1:n-1)
+
+    call mpas_cubic_spline_coefficients(x, y, n, y2)
+    call mpas_interpolate_cubic_spline(x, y, y2, n, xOut, yOut, n-1)
+
+    do i = 1, n-1
+      @assertEqual(y(i), yOut(i), tol)
+    end do
+  end subroutine test_cubic_spline_reproduces_nodes
+
+  @test
+  subroutine test_cubic_spline_accuracy_sine()
+    ! Cubic spline of sin(x) should be accurate to ~O(h^4)
+    integer, parameter :: n = 11, nOut = 5
+    real(kind=RKIND) :: x(n), y(n), y2(n)
+    real(kind=RKIND) :: xOut(nOut), yOut(nOut)
+    real(kind=RKIND) :: h, maxErr
+    integer :: i
+
+    ! Nodes from 0 to pi with h = pi/10
+    h = acos(-1.0_RKIND) / real(n - 1, RKIND)
+    do i = 1, n
+      x(i) = real(i - 1, RKIND) * h
+      y(i) = sin(x(i))
+    end do
+
+    ! Test at midpoints between nodes 3-7 (away from boundaries)
+    do i = 1, nOut
+      xOut(i) = x(i + 3) + 0.5_RKIND * h
+    end do
+
+    call mpas_cubic_spline_coefficients(x, y, n, y2)
+    call mpas_interpolate_cubic_spline(x, y, y2, n, xOut, yOut, nOut)
+
+    maxErr = 0.0_RKIND
+    do i = 1, nOut
+      maxErr = max(maxErr, abs(yOut(i) - sin(xOut(i))))
+    end do
+
+    ! With h ~ 0.31, cubic spline error should be well under 1e-4
+    @assertTrue(maxErr < 1.0e-4_RKIND, 'Cubic spline of sin(x) error too large')
+  end subroutine test_cubic_spline_accuracy_sine
+
+  @test
+  subroutine test_cubic_spline_integrate_linear()
+    ! Integral of a linear function f(x) = 2x from 0 to 3 should be 9
+    integer, parameter :: n = 4
+    real(kind=RKIND) :: x(n), y(n), y2(n)
+    real(kind=RKIND) :: integral
+
+    x = [0.0_RKIND, 1.0_RKIND, 2.0_RKIND, 3.0_RKIND]
+    y = [0.0_RKIND, 2.0_RKIND, 4.0_RKIND, 6.0_RKIND]
+
+    call mpas_cubic_spline_coefficients(x, y, n, y2)
+    call mpas_integrate_cubic_spline(x, y, y2, n, 0.0_RKIND, 3.0_RKIND, integral)
+
+    @assertEqual(9.0_RKIND, integral, tol)
+  end subroutine test_cubic_spline_integrate_linear
+
+  @test
+  subroutine test_cubic_spline_integrate_sine()
+    ! Integral of sin(x) from 0 to pi should be 2.0
+    integer, parameter :: n = 21
+    real(kind=RKIND) :: x(n), y(n), y2(n)
+    real(kind=RKIND) :: integral, pi_val
+    integer :: i
+
+    pi_val = acos(-1.0_RKIND)
+    do i = 1, n
+      x(i) = real(i - 1, RKIND) * pi_val / real(n - 1, RKIND)
+      y(i) = sin(x(i))
+    end do
+
+    call mpas_cubic_spline_coefficients(x, y, n, y2)
+    call mpas_integrate_cubic_spline(x, y, y2, n, 0.0_RKIND, pi_val, integral)
+
+    ! Analytic integral of sin(x) from 0 to pi = 2.0
+    ! With 21 nodes (h~0.157), spline integration error is ~1.7e-6
+    @assertEqual(2.0_RKIND, integral, 1.0e-5_RKIND)
+  end subroutine test_cubic_spline_integrate_sine
+
+end module test_spline_interpolation

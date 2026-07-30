@@ -1,0 +1,80 @@
+# Cross-repo testing: run CI against an external MPAS source repo.
+# Dispatch-only — does not affect badge status on master.
+
+name: "Cross-Repo Test"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpas-repository:
+        description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model)'
+        required: true
+      mpas-ref:
+        description: 'Git ref (branch, tag, or SHA)'
+        required: true
+      compilers:
+        description: 'Compilers to test (comma-separated: gcc,nvhpc,oneapi)'
+        required: false
+        default: 'gcc,nvhpc,oneapi'
+      mpi:
+        description: 'MPI implementation'
+        required: false
+        default: 'mpich'
+      # GPU cross-repo testing disabled until NCAR security review of running
+      # external code on self-hosted CIRRUS runners is complete.
+      # include-gpu:
+      #   description: 'Include GPU (CUDA) test'
+      #   required: false
+      #   type: boolean
+      #   default: false
+
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      compilers: ${{ steps.set.outputs.compilers }}
+      mpi: ${{ steps.set.outputs.mpi }}
+      repo: ${{ steps.set.outputs.repo }}
+      ref: ${{ steps.set.outputs.ref }}
+    steps:
+      - id: set
+        shell: bash
+        run: |
+          COMPILERS="${{ inputs.compilers }}"
+          REPO="${{ inputs.mpas-repository || 'MPAS-Dev/MPAS-Model' }}"
+          REF="${{ inputs.mpas-ref || 'develop' }}"
+          MPI="${{ inputs.mpi || 'mpich' }}"
+
+          echo "compilers=$(printf '%s' "${COMPILERS:-gcc}" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$";""))')" >> "$GITHUB_OUTPUT"
+          echo "mpi=${MPI}" >> "$GITHUB_OUTPUT"
+          echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+
+          echo "## Cross-Repo Test" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Source** | [\`${REPO}@${REF}\`](https://github.com/${REPO}/tree/${REF}) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Compilers** | \`${COMPILERS:-gcc}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **MPI** | \`${MPI}\` |" >> "$GITHUB_STEP_SUMMARY"
+  cpu-matrix:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: ${{ fromJSON(needs.config.outputs.compilers) }}
+    uses: ./.github/workflows/_test-compiler.yml
+    with:
+      compiler: ${{ matrix.compiler }}
+      mpi: ${{ needs.config.outputs.mpi }}
+      mpas-repository: ${{ needs.config.outputs.repo }}
+      mpas-ref: ${{ needs.config.outputs.ref }}
+
+  # GPU cross-repo testing disabled until NCAR security review is complete.
+  # gpu:
+  #   needs: config
+  #   if: ${{ inputs.include-gpu }}
+  #   uses: ./.github/workflows/_test-gpu.yml
+  #   with:
+  #     mpi: ${{ needs.config.outputs.mpi }}
+  #     mpas-repository: ${{ needs.config.outputs.repo }}
+  #     mpas-ref: ${{ needs.config.outputs.ref }}

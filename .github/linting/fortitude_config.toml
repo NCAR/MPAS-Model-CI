@@ -1,0 +1,36 @@
+# Fortitude linting configuration for MPAS-Model
+# See: https://github.com/PlasmaFAIR/fortitude
+#
+# Adapted from ESCOMP/CAM-SIMA MPAS dynamical core CI.
+# Start non-blocking (--exit-zero) to establish a baseline, then
+# tighten over time by removing entries from `ignore`.
+
+[check]
+exclude = [
+  # Third-party / vendored code we don't control
+  'src/external',
+  # WRF physics are imported from WRF and follow WRF conventions
+  'src/core_atmosphere/physics/physics_wrf',
+]
+file-extensions = [
+  'F',
+  'f',
+  'F90',
+  'f90',
+]
+ignore = [
+  'C003',  # Fortran 2018 `implicit none (external)` not supported by all compilers
+  'C182',  # Allow grouped allocate/deallocate statements
+  'S102',  # Allow two-space indentation (MPAS convention)
+]
+line-length = 132
+output-format = 'grouped'
+select = [
+  'ALL',
+]
+
+[check.exit-unlabelled-loops]
+allow-unnested-loops = true
+
+[check.strings]
+quotes = 'single'
