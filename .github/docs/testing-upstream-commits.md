@@ -12,6 +12,11 @@ MPAS-Model fork. When you specify an external repository, the build jobs check
 out that repo's source code and overlay the CI actions from `MPAS-Model-CI` so
 the build/run/validate pipeline works unchanged.
 
+Upstream feature work lands on **`develop`** (PRs against `MPAS-Dev/MPAS-Model`
+`develop`); `master` is the release line. When validating a contributor PR in
+this CI fork, prefer a **`PRtest-*`** branch based on **`develop`** (not
+`master`) — see below.
+
 ## Supported Workflows
 
 These workflows accept **`mpas-repository`** and **`mpas-ref`** (or require them) on **`workflow_dispatch`**:
@@ -64,6 +69,40 @@ Per-compiler subset workflows (e.g. `test-gcc-mpich.yml`) do **not** expose cros
 
 **Default behavior (test MPAS-Model-CI itself):**
 - Leave both fields empty
+
+## Testing a PR on a `PRtest-*` branch (preferred for develop-based PRs)
+
+Contributor PRs target upstream **`develop`**. To run the full CPU compiler /
+ECT / BFB push CI against such a PR inside this fork:
+
+1. Branch from **`origin/develop`** (science integration tip).
+2. Overlay CI from **`origin/master`** (`.github/`, and `tests/` if needed).
+3. Cherry-pick the PR commit(s) on top.
+4. Push as **`PRtest-<short-name>`** (e.g. `PRtest-incomplete-gamma-fixes`).
+
+Branches matching `PRtest-*` auto-trigger the same MPICH CPU subsets, CUDA
+compile-only, and BFB callers as `hackathon-*`. Use `PRtest-*` for PR
+validation; keep `hackathon-*` for hackathon experiments.
+
+Example:
+
+```bash
+git fetch origin develop master
+git checkout -B PRtest-my-pr origin/develop
+git checkout origin/master -- .github tests
+git add .github tests
+git commit -m "ci: overlay CI infrastructure for PRtest"
+
+# Cherry-pick PR commits (from the contributor fork or pull/<n>/head)
+git fetch https://github.com/MPAS-Dev/MPAS-Model.git pull/1486/head
+git cherry-pick <sha>...
+
+git push -u origin PRtest-my-pr
+```
+
+Alternatively, use **Cross-Repo Test** `workflow_dispatch` with
+`mpas-repository` / `mpas-ref` pointing at the contributor fork (no local
+branch required).
 
 ## Using the GitHub CLI
 

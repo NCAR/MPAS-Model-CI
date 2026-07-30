@@ -66,9 +66,11 @@ Current tags: `testdata-240km-v1`, `testdata-120km-v1` (see `RELEASE_TESTDATA_*`
 
 ## Branch Structure
 
-- **`master`** — default branch, mirrors upstream MPAS-Model. Workflow files must exist here for the `workflow_dispatch` UI button to appear.
-- **`develop`** — upstream develop branch.
-- **Topic branches** — fork from `master` for changes. Branches named **`hackathon-*`** auto-run **CPU ECT subsets** (push/PR). **GPU ECT** stays **`workflow_dispatch` only** (see Security). CPU BFB callers also run on push to `hackathon`, `hackathon/**`, `hackathon-*`, or legacy `feature-ci-bfb`.
+- **`master`** — default branch / release line. Workflow files must exist here for the `workflow_dispatch` UI button to appear.
+- **`develop`** — integration branch matching upstream MPAS-Dev/MPAS-Model `develop` (feature PRs land here first).
+- **`PRtest-*`** — temporary branches for testing contributor PRs: base on **`develop`**, overlay CI from `master`, cherry-pick the PR commit(s), push. Auto-runs **CPU ECT subsets** (and BFB callers). Prefer this over `hackathon-*` for PR validation.
+- **`hackathon-*`** — same auto-CI as `PRtest-*` (kept for hackathon experiments).
+- **GPU ECT** stays **`workflow_dispatch` only** (see Security). CPU BFB callers also run on push to `hackathon`, `hackathon/**`, `hackathon-*`, `PRtest-*`, or legacy `feature-ci-bfb`.
 
 ## Workflow Architecture
 
@@ -79,7 +81,7 @@ Each compiler+MPI combination has a thin caller workflow that invokes a reusable
 - **CPU subsets** call `_test-compiler.yml` with `compiler` and `mpi` inputs
 - **GPU subsets** call `_test-gpu.yml` with `mpi` input (always NVHPC)
 
-**MPICH callers** (`test-gcc-mpich`, `test-intel-mpich`, `test-nvhpc-mpich`) run on push/PR to `master`/`develop` and to **`hackathon-*`**.
+**MPICH callers** (`test-gcc-mpich`, `test-intel-mpich`, `test-nvhpc-mpich`) run on push/PR to `master`/`develop` and to **`PRtest-*`** / **`hackathon-*`**.
 **compile-nvhpc-cuda-mpich** (NVHPC + OpenACC compile-only on GitHub-hosted runners) also runs on push/PR to those branches.
 **OpenMPI CPU callers** (`test-*-openmpi`) stay **`workflow_dispatch` only** (optional; OpenMPI regressions).
 **GPU ECT callers** (`test-gpu-mpich`, `test-gpu-openmpi`) are **`workflow_dispatch` only** (self-hosted CIRRUS).

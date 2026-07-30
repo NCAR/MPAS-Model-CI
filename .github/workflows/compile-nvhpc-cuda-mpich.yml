@@ -9,9 +9,9 @@ permissions:
 on:
   workflow_dispatch:
   push:
-    branches: [master, develop, 'hackathon-*']
+    branches: [master, develop, 'hackathon-*', 'PRtest-*']
   pull_request:
-    branches: [master, develop, 'hackathon-*']
+    branches: [master, develop, 'hackathon-*', 'PRtest-*']
 
 jobs:
   config:
