@@ -1,0 +1,102 @@
+# Unit Tests
+# Builds and runs pFUnit-based unit tests for standalone MPAS procedures.
+# Tests mathematical/computational routines that don't require the full
+# MPAS framework (interpolation, geometry, sorting, etc.).
+#
+# Adapted from ESCOMP/CAM-SIMA MPAS dynamical core CI.
+
+name: Unit Tests
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/unit-tests.yml'
+  push:
+    branches: [master, develop]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/unit-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: pFUnit (GCC ${{ matrix.gcc-version }})
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        gcc-version: ['12', '13', '14']
+
+    env:
+      CC: gcc-${{ matrix.gcc-version }}
+      CXX: g++-${{ matrix.gcc-version }}
+      FC: gfortran-${{ matrix.gcc-version }}
+      PFUNIT_VERSION: 'v4.13.0'
+      PFUNIT_PATH: ${{ github.workspace }}/pFUnit
+
+    steps:
+      - name: Install GCC toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-${{ matrix.gcc-version }} g++-${{ matrix.gcc-version }} gfortran-${{ matrix.gcc-version }}
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Cache pFUnit
+        id: cache-pfunit
+        uses: actions/cache@v5
+        with:
+          key: pfunit-${{ env.PFUNIT_VERSION }}-gcc-${{ matrix.gcc-version }}
+          path: ${{ env.PFUNIT_PATH }}/install
+
+      - name: Build pFUnit
+        if: steps.cache-pfunit.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch ${PFUNIT_VERSION} \
+            https://github.com/Goddard-Fortran-Ecosystem/pFUnit.git ${PFUNIT_PATH}
+
+          cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${PFUNIT_PATH}/install \
+            -B ${PFUNIT_PATH}/build \
+            -S ${PFUNIT_PATH}
+
+          cmake --build ${PFUNIT_PATH}/build --parallel $(nproc)
+          cmake --install ${PFUNIT_PATH}/build
+
+      - name: Build tests
+        run: |
+          cmake \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH=${PFUNIT_PATH}/install \
+            -B tests/build \
+            -S tests
+
+          cmake --build tests/build --parallel $(nproc)
+
+      - name: Run tests
+        run: |
+          ctest \
+            --build-config Debug \
+            --output-on-failure \
+            --test-dir tests/build \
+            --verbose \
+            --output-log tests/build/unit-tests.log
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-tests-log-gcc-${{ matrix.gcc-version }}
+          path: tests/build/unit-tests.log
+          retention-days: 14
+          if-no-files-found: ignore

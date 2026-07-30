@@ -1,0 +1,272 @@
+# Reusable workflow: GPU (CUDA) validation via ECT (NVHPC).
+# Called by test-gpu-mpich.yml and test-gpu-openmpi.yml.
+#
+# Builds MPAS-A with OpenACC/CUDA on CIRRUS self-hosted runners, then
+# validates via ECT (PyCECT) — the same statistical test used for CPU
+# subsets. GPU results are not expected to be bit-for-bit identical to CPU.
+#
+# Security: Runs on self-hosted CIRRUS runners. Callers must use workflow_dispatch
+# only — never push or pull_request triggers (fork / unreviewed code risk on CIRRUS).
+
+name: _test-gpu
+
+on:
+  workflow_call:
+    inputs:
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: true
+        type: string
+      # Cross-repo inputs disabled until NCAR security review of running
+      # external code on self-hosted CIRRUS runners is complete.
+      # mpas-repository:
+      #   description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model). Empty = this repo.'
+      #   required: false
+      #   type: string
+      #   default: ''
+      # mpas-ref:
+      #   description: 'Git ref in the MPAS source repo (branch, tag, SHA)'
+      #   required: false
+      #   type: string
+      #   default: ''
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+      image-gpu: ${{ steps.gpu-container.outputs.image }}
+      mpas-version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github
+            src/core_atmosphere/Registry.xml
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: nvhpc
+          mpi: ${{ inputs.mpi }}
+      - uses: ./.github/actions/resolve-container
+        id: gpu-container
+        with:
+          compiler: nvhpc
+          mpi: ${{ inputs.mpi }}
+          gpu: cuda
+      - uses: ./.github/actions/mpas-version
+        id: version
+
+  build:
+    needs: config
+    name: Build (cuda, ${{ inputs.mpi }})
+    runs-on:
+      group: CIRRUS-4x8-gpu
+    container:
+      image: ${{ needs.config.outputs.image-gpu }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      # Cross-repo checkout disabled until NCAR security review is complete.
+      # To re-enable, restore mpas-repository/mpas-ref inputs above and
+      # replace the checkout step with:
+      #
+      # - uses: actions/checkout@v5
+      #   with:
+      #     repository: ${{ inputs.mpas-repository || github.repository }}
+      #     ref: ${{ inputs.mpas-ref || '' }}
+      #     submodules: 'true'
+      #
+      # - uses: actions/checkout@v5
+      #   if: ${{ inputs.mpas-repository != '' }}
+      #   with:
+      #     path: _ci
+      #     sparse-checkout: .github
+      #
+      # - name: Overlay CI infrastructure
+      #   if: ${{ inputs.mpas-repository != '' }}
+      #   shell: bash
+      #   run: |
+      #     cp -r _ci/.github . && rm -rf _ci
+      #     echo "## Source: ${{ inputs.mpas-repository }}@${{ inputs.mpas-ref }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build MPAS-A (double precision, OpenACC)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: nvhpc
+          use-pio: 'false'
+          openacc: 'true'
+          precision: double
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-gpu-cuda-${{ inputs.mpi }}
+          path: atmosphere_model
+          retention-days: 1
+
+  ect-run:
+    needs: [config, build]
+    if: ${{ needs.build.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        member: [0, 1, 2]
+
+    name: ECT member ${{ matrix.member }} (cuda, ${{ inputs.mpi }})
+    runs-on:
+      group: CIRRUS-4x8-gpu
+    container:
+      image: ${{ needs.config.outputs.image-gpu }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check GPU availability
+        run: |
+          echo "=== GPU Information ==="
+          nvidia-smi || echo "WARNING: nvidia-smi failed"
+
+      - name: Download executable
+        id: download
+        uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: exe-gpu-cuda-${{ inputs.mpi }}
+
+      - name: Download test case
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/download-testdata
+        with:
+          resolution: 120km
+          dest-dir: base-case
+
+      - name: Restore cached restart
+        if: steps.download.outcome == 'success'
+        id: cache-restart
+        uses: actions/cache/restore@v5
+        with:
+          path: spinup-restart.nc
+          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
+
+      - name: Download spin-up restart
+        if: steps.download.outcome == 'success'
+        id: restart
+        shell: bash
+        run: |
+          source .github/ci-config.env
+          RESTART="${ECT_RESTART_FILE}"
+          RELEASE_TAG="ect-v${{ needs.config.outputs.mpas-version }}"
+
+          if [ -f "spinup-restart.nc" ]; then
+            echo "Using cached restart file"
+            mv spinup-restart.nc "${RESTART}"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          DATA_REPO="${DATA_REPOSITORY:-${GITHUB_REPOSITORY}}"
+          echo "Downloading ${RESTART}.gz from ${DATA_REPO} release ${RELEASE_TAG}..."
+          HTTP_CODE=$(curl -sL --retry 5 --retry-delay 5 -w "%{http_code}" \
+            "https://github.com/${DATA_REPO}/releases/download/${RELEASE_TAG}/${RESTART}.gz" \
+            -o "${RESTART}.gz")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            gunzip "${RESTART}.gz"
+            echo "Downloaded restart: $(du -h ${RESTART})"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "file=${RESTART}" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Spin-up restart not available (HTTP ${HTTP_CODE}), running from cold-start init.nc"
+            echo "available=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run perturbed MPAS-A (member ${{ matrix.member }})
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/run-perturb-mpas
+        with:
+          base-dir: base-case
+          executable: ./atmosphere_model
+          member-start: '${{ matrix.member }}'
+          member-end: '${{ matrix.member }}'
+          num-ranks: '4'
+          mpi-impl: ${{ inputs.mpi }}
+          run-duration: '0_02:36:00'
+          run-timeout: '45'
+          restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
+
+      - name: Upload history file
+        uses: actions/upload-artifact@v6
+        if: always() && steps.download.outcome == 'success'
+        with:
+          name: ect-history-gpu-cuda-${{ inputs.mpi }}-member${{ matrix.member }}
+          path: history-output/history.*.nc
+          retention-days: 1
+
+  ect-validate:
+    needs: [config, ect-run]
+    if: ${{ needs.ect-run.result == 'success' }}
+    name: ECT Validate (cuda, ${{ inputs.mpi }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Download history files
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: ect-history-gpu-cuda-${{ inputs.mpi }}-*
+          path: ect-test-files
+          merge-multiple: true
+
+      - name: Run ECT validation
+        if: steps.download.outcome == 'success'
+        uses: ./.github/actions/validate-ect
+        with:
+          history-dir: ect-test-files
+          label: nvhpc/${{ inputs.mpi }}/cuda/smiol
+          mpas-version: ${{ needs.config.outputs.mpas-version }}
+          dimensions: |
+            compiler=nvhpc
+            mpi=${{ inputs.mpi }}
+            gpu=cuda
+            io=smiol
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ect-result-gpu-cuda-${{ inputs.mpi }}
+          path: ect-result.txt
+          retention-days: 1
+
+  cleanup:
+    needs: [ect-run, ect-validate]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+
+    steps:
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-") or startswith("ect-history-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true

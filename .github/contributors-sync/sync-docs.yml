@@ -1,0 +1,76 @@
+# Sync CI/CD documentation from NCAR/MPAS-Model-CI
+#
+# Runs weekly (or manually) to regenerate the ci-cd.md page from the
+# actual workflow files in MPAS-Model-CI. Commits changes if any.
+#
+# This file should live at:
+#   NCAR/contributors-MPAS-A/.github/workflows/sync-docs.yml
+
+name: Sync CI/CD Docs
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      ci-branch:
+        description: 'MPAS-Model-CI branch to sync from'
+        required: false
+        default: 'feature-ci-test-cases'
+
+jobs:
+  sync:
+    name: Generate CI/CD page
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/checkout@v5
+        with:
+          repository: NCAR/MPAS-Model-CI
+          ref: ${{ inputs.ci-branch || 'feature-ci-test-cases' }}
+          path: _mpas-model-ci
+          sparse-checkout: .github
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Generate ci-cd.md
+        run: |
+          python _mpas-model-ci/.github/contributors-sync/generate_ci_docs.py \
+            _mpas-model-ci \
+            -o docs/ci-cd.md
+
+      - name: Clean up
+        run: rm -rf _mpas-model-ci
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet docs/ci-cd.md; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes detected in ci-cd.md"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changes detected:"
+            git diff --stat docs/ci-cd.md
+          fi
+
+      - name: Commit and push
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/ci-cd.md
+          git commit -m "Sync CI/CD docs from MPAS-Model-CI
+
+          Auto-generated from NCAR/MPAS-Model-CI workflow files.
+          Source branch: ${{ inputs.ci-branch || 'feature-ci-test-cases' }}"
+          git push

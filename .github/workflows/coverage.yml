@@ -1,0 +1,125 @@
+# Code Coverage workflow
+# Builds MPAS-A with GCC coverage instrumentation, runs the 240km test case,
+# generates an lcov report, and uploads to Codecov.
+#
+name: Code Coverage
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpas-repository:
+        description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model). Leave empty to use this repo.'
+        required: false
+        default: ''
+      mpas-ref:
+        description: 'Git ref (branch, tag, or SHA) in the MPAS source repo'
+        required: false
+        default: ''
+  push:
+    branches: [master, develop]
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: mpich
+
+  coverage:
+    name: Build, Run, and Generate Coverage
+    needs: config
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ inputs.mpas-ref || '' }}
+          submodules: 'true'
+
+      - uses: actions/checkout@v5
+        if: ${{ inputs.mpas-repository != '' }}
+        with:
+          path: _ci
+          sparse-checkout: .github
+
+      - name: Overlay CI infrastructure
+        if: ${{ inputs.mpas-repository != '' }}
+        shell: bash
+        run: cp -r _ci/.github . && rm -rf _ci
+
+      - name: Install lcov
+        run: |
+          dnf install -y epel-release
+          dnf install -y lcov
+
+      - name: Build MPAS-A with coverage flags
+        run: |
+          source /container/config_env.sh
+          
+          # Patch gfortran target: swap -O3 for -O0 --coverage -g
+          sed -i 's/"FFLAGS_OPT = -O3 -ffree-line-length-none/"FFLAGS_OPT = -O0 --coverage -g -ffree-line-length-none/' Makefile
+          sed -i 's/"CFLAGS_OPT = -O3"/"CFLAGS_OPT = -O0 --coverage -g"/' Makefile
+          sed -i 's/"CXXFLAGS_OPT = -O3"/"CXXFLAGS_OPT = -O0 --coverage -g"/' Makefile
+          sed -i 's/"LDFLAGS_OPT = -O3"/"LDFLAGS_OPT = --coverage"/' Makefile
+          
+          make gfortran CORE=atmosphere --jobs $(nproc)
+
+      - name: Download test data
+        uses: ./.github/actions/download-testdata
+        with:
+          resolution: 240km
+
+      - name: Run 240km test case
+        run: |
+          source /container/config_env.sh
+          cd 240km
+          ln -sf ../atmosphere_model .
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '0_00:30:00'/" namelist.atmosphere
+          ulimit -s unlimited 2>/dev/null || true
+          mpirun -n 1 ./atmosphere_model
+
+      - name: Generate coverage report
+        run: |
+          source /container/config_env.sh
+          
+          lcov --capture \
+               --directory src \
+               --output-file coverage.info \
+               --ignore-errors source,gcov
+          
+          # Remove external/system files from coverage
+          lcov --remove coverage.info \
+               '/usr/*' \
+               '*/external/*' \
+               --output-file coverage.info \
+               --ignore-errors unused
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          files: coverage.info
+          flags: fortran
+          name: mpas-atmosphere
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.info
+          retention-days: 30
