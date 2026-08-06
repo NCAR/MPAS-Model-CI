@@ -37,6 +37,11 @@ on:
         required: false
         default: '40'
         type: string
+      cuda_aware_mpi:
+        description: End-to-end CUDA-aware MPI - sets config_gpu_aware_mpi=.true. in &development (MPAS hands device pointers to MPI) AND MPICH_GPU_SUPPORT_ENABLED=1 / OpenMPI UCX-CUDA flags. Requires the container's MPI to be built with GPU support.
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   config:
@@ -99,9 +104,21 @@ jobs:
       - name: GPU check
         shell: bash
         run: |
-          echo "## GPU" >> "$GITHUB_STEP_SUMMARY"
-          nvidia-smi || echo "::warning::nvidia-smi failed"
-          nvidia-smi || true
+          {
+            echo "## GPU diagnostics"
+            echo ""
+            echo "### /dev/nvidia*"
+            ls -la /dev/nvidia* 2>&1 || echo "(none — container not GPU-mapped?)"
+            echo ""
+            echo "### nvidia-smi -L (uses /dev/nvidia*, bypasses libnvidia-ml stub)"
+            nvidia-smi -L 2>&1 || echo "(nvidia-smi -L failed)"
+            echo ""
+            echo "### nvidia-smi --query-gpu (CSV)"
+            nvidia-smi --query-gpu=index,name,uuid,driver_version,memory.total --format=csv 2>&1 || echo "(query failed)"
+            echo ""
+            echo "### CUDA / OpenACC env"
+            env | grep -E '^(CUDA|ACC|NVIDIA|MPICH_GPU|OMPI|UCX)_' | sort || true
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Setup Nsight Systems CLI (install + RPM cache)
         uses: ./.github/actions/setup-nsight-systems
@@ -127,8 +144,41 @@ jobs:
           echo "config_run_duration -> ${DURATION} (config_dt left as in test case)"
           grep -E 'config_dt|config_run_duration' nsight-case/namelist.atmosphere | head -n 5 || true
 
+      # MPAS host-stages halos itself unless config_gpu_aware_mpi=.true. is set in
+      # &development. Without this, the MPI library never sees a device pointer and
+      # MPICH_GPU_SUPPORT_ENABLED has nothing to do.
+      - name: Patch namelist (config_gpu_aware_mpi = .true.)
+        if: ${{ inputs.cuda_aware_mpi }}
+        shell: bash
+        working-directory: nsight-case
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          p = Path("namelist.atmosphere")
+          text = p.read_text()
+          if re.search(r"^\s*&development\b", text, flags=re.MULTILINE):
+              def edit(m):
+                  block = m.group(0)
+                  if re.search(r"config_gpu_aware_mpi\s*=", block):
+                      return re.sub(r"config_gpu_aware_mpi\s*=\s*\.\w+\.",
+                                    "config_gpu_aware_mpi = .true.", block)
+                  return re.sub(r"(\n\s*/\s*)$",
+                                r"\n    config_gpu_aware_mpi = .true.\1",
+                                block, count=1)
+              text = re.sub(r"^\s*&development\b[\s\S]*?\n\s*/\s*",
+                            edit, text, count=1, flags=re.MULTILINE)
+          else:
+              text = text.rstrip() + "\n&development\n    config_gpu_aware_mpi = .true.\n/\n"
+          p.write_text(text)
+          PY
+          echo "&development block now reads:"
+          awk '/^[[:space:]]*&development/,/^[[:space:]]*\//' namelist.atmosphere
+
       - name: Run nsys profile
         shell: bash
+        env:
+          CUDA_AWARE_MPI: ${{ inputs.cuda_aware_mpi }}
         run: |
           chmod +x .github/scripts/run-nsys-profile.sh
           bash .github/scripts/run-nsys-profile.sh \

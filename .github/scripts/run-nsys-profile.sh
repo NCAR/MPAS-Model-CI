@@ -49,24 +49,47 @@ if [ "${MPI_IMPL}" = "openmpi" ]; then
   MPI_FLAGS="${OPENMPI_RUN_FLAGS:---allow-run-as-root --oversubscribe}"
 fi
 
+# Opt-in CUDA-aware MPI: passes device pointers to MPI without host staging.
+# Requires the container's MPI library to be built with GPU support; if it
+# isn't, MPI will either silently fall back to host staging or abort.
+CUDA_AWARE_MPI="${CUDA_AWARE_MPI:-false}"
+if [ "${CUDA_AWARE_MPI}" = "true" ]; then
+  case "${MPI_IMPL}" in
+    mpich)
+      export MPICH_GPU_SUPPORT_ENABLED=1
+      ;;
+    openmpi)
+      export OMPI_MCA_pml=ucx
+      export OMPI_MCA_osc=ucx
+      export UCX_TLS=cuda,cuda_copy,cuda_ipc,sm,self
+      MPI_FLAGS="${MPI_FLAGS} --mca pml ucx --mca osc ucx"
+      ;;
+  esac
+fi
+
 ulimit -s unlimited 2>/dev/null || true
 
 cd "${WORKDIR}"
 
 OUT_ABS="${PWD}/${NSYS_BASENAME}"
 echo "=== Nsight profile ==="
-echo "  workdir: ${WORKDIR}"
-echo "  ranks:   ${NUM_PROCS}"
-echo "  mpi:     ${MPI_IMPL}"
-echo "  output:  ${OUT_ABS}"
-echo "  timeout: ${TIMEOUT}m"
+echo "  workdir:        ${WORKDIR}"
+echo "  ranks:          ${NUM_PROCS}"
+echo "  mpi:            ${MPI_IMPL}"
+echo "  cuda-aware mpi: ${CUDA_AWARE_MPI}"
+echo "  output:         ${OUT_ABS}"
+echo "  timeout:        ${TIMEOUT}m"
 
+# Trace MPI alongside CUDA so halo exchanges show up in the timeline and we
+# can tell device-to-device transfers from host-staged ones.
+# pin-gpu.sh sets CUDA_VISIBLE_DEVICES per rank so multi-rank runs spread
+# across the node's GPUs instead of stacking on device 0.
 set +e
 timeout "${TIMEOUT}"m "${NSYS_BIN}" profile \
-  --trace=cuda,nvtx,osrt \
+  --trace=cuda,nvtx,osrt,mpi \
   --stats=true \
   -o "${OUT_ABS}" \
-  mpirun -n "${NUM_PROCS}" ${MPI_FLAGS} ./atmosphere_model
+  mpirun -n "${NUM_PROCS}" ${MPI_FLAGS} bash "${SCRIPT_DIR}/pin-gpu.sh" ./atmosphere_model
 RUN_STATUS=$?
 set -e
 
