@@ -1,0 +1,62 @@
+# CPU vs GPU performance comparison on CIRRUS-32x256-A10.
+#
+# Run this from whichever branch you want measured — e.g. a hack26_* routine
+# branch — by picking that branch in the "Run workflow" ref dropdown. Both
+# legs build/run on the same runner group, so the only difference between
+# them is CPU vs GPU (NVHPC + OpenACC).
+#
+# workflow_dispatch only: self-hosted CIRRUS runners must never trigger on
+# push/pull_request (fork / unreviewed-code risk), same as the rest of the
+# GPU test suite.
+
+name: "Perf: CPU vs GPU (NVHPC)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpi:
+        description: MPI implementation
+        required: true
+        default: mpich
+        type: choice
+        options:
+          - mpich
+          - openmpi
+      resolution:
+        description: Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)
+        required: false
+        default: '120km'
+        type: string
+      run_duration:
+        description: config_run_duration (D_HH:MM:SS)
+        required: false
+        default: '0_00:12:00'
+        type: string
+      cpu_ranks:
+        description: MPI rank count for the CPU leg
+        required: false
+        default: '32'
+        type: string
+      gpu_ranks:
+        description: MPI rank count for the GPU leg (1 per GPU on the node)
+        required: false
+        default: '1'
+        type: string
+      target_routine:
+        description: >
+          Optional: MPAS timer name to call out in the summary (e.g.
+          atm_advance_acoustic_step). Cosmetic only.
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  perf:
+    uses: ./.github/workflows/_test-perf.yml
+    with:
+      mpi: ${{ inputs.mpi }}
+      resolution: ${{ inputs.resolution }}
+      run-duration: ${{ inputs.run_duration }}
+      cpu-ranks: ${{ inputs.cpu_ranks }}
+      gpu-ranks: ${{ inputs.gpu_ranks }}
+      target-routine: ${{ inputs.target_routine }}
