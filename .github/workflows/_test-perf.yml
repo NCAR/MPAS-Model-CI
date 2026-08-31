@@ -28,11 +28,6 @@ on:
         description: 'MPI implementation (mpich, openmpi)'
         required: true
         type: string
-      runner-group:
-        description: 'Runner group used for BOTH the CPU and GPU legs (same hardware is the point)'
-        required: false
-        type: string
-        default: 'CIRRUS-32x256-A10'
       resolution:
         description: 'Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)'
         required: false
@@ -112,8 +107,11 @@ jobs:
             openacc: true
             image: ${{ needs.config.outputs.image-gpu }}
     name: Build (${{ matrix.leg }})
+    # Both legs pinned to the same runner group deliberately -- this is
+    # the whole point of the workflow (identical hardware, CPU vs GPU is
+    # the only variable). Not an input; do not make this configurable.
     runs-on:
-      group: ${{ inputs.runner-group }}
+      group: CIRRUS-32x256-A10
     container:
       image: ${{ matrix.image }}
 
@@ -154,8 +152,11 @@ jobs:
             image: ${{ needs.config.outputs.image-gpu }}
             ranks: ${{ inputs.gpu-ranks }}
     name: Run (${{ matrix.leg }})
+    # Both legs pinned to the same runner group deliberately -- this is
+    # the whole point of the workflow (identical hardware, CPU vs GPU is
+    # the only variable). Not an input; do not make this configurable.
     runs-on:
-      group: ${{ inputs.runner-group }}
+      group: CIRRUS-32x256-A10
     container:
       image: ${{ matrix.image }}
 
@@ -230,7 +231,7 @@ jobs:
           MPI: ${{ inputs.mpi }}
           CPU_RANKS: ${{ inputs.cpu-ranks }}
           GPU_RANKS: ${{ inputs.gpu-ranks }}
-          RUNNER_GROUP: ${{ inputs.runner-group }}
+          RUNNER_GROUP: CIRRUS-32x256-A10
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TARGET_ROUTINE: ${{ inputs.target-routine }}
