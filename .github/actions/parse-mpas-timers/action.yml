@@ -1,0 +1,51 @@
+name: 'Parse MPAS Timers'
+description: >
+  Parse the native MPAS-A timer table (log.atmosphere.0000.out) into JSON.
+  Works on both CPU and GPU builds since the native timer framework
+  (TIMER_LIB unset -> MPAS_NATIVE_TIMERS) is on by default; no build changes
+  required.
+
+inputs:
+  log-dir:
+    description: 'Directory containing log.atmosphere.0000.out (the run working directory)'
+    required: true
+  log-file:
+    description: 'Log filename within log-dir'
+    required: false
+    default: 'log.atmosphere.0000.out'
+  output-file:
+    description: 'Path to write the parsed JSON'
+    required: true
+
+outputs:
+  json-file:
+    description: 'Path to the parsed timer JSON'
+    value: ${{ steps.parse.outputs.json-file }}
+  timer-count:
+    description: 'Number of timer rows parsed (0 if the table was not found)'
+    value: ${{ steps.parse.outputs.timer-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Parse timer table
+      id: parse
+      shell: bash
+      run: |
+        LOG_PATH="${{ inputs.log-dir }}/${{ inputs.log-file }}"
+        OUT="${{ inputs.output-file }}"
+
+        if [ ! -f "${LOG_PATH}" ]; then
+          echo "::error::MPAS log not found at ${LOG_PATH}"
+          exit 1
+        fi
+
+        python3 "${GITHUB_WORKSPACE}/.github/scripts/parse-mpas-timers.py" "${LOG_PATH}" "${OUT}"
+
+        COUNT=$(python3 -c "import json; print(len(json.load(open('${OUT}'))['timers']))")
+        echo "timer-count=${COUNT}" >> "$GITHUB_OUTPUT"
+        echo "json-file=${OUT}" >> "$GITHUB_OUTPUT"
+
+        if [ "${COUNT}" -eq 0 ]; then
+          echo "::warning::No timer rows parsed from ${LOG_PATH} — check that TIMER_LIB was not overridden at build time"
+        fi
