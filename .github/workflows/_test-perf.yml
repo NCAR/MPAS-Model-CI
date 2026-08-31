@@ -1,0 +1,263 @@
+# Reusable workflow: CPU vs GPU performance comparison.
+#
+# Builds MPAS-A with NVHPC once without OpenACC (CPU) and once with OpenACC
+# (GPU), runs both on the *same* CIRRUS runner group so core count, memory,
+# and node hardware are identical between legs — the only variable is the
+# accelerator. Comparison uses MPAS-A's native per-routine timer table
+# (on by default; see .github/scripts/parse-mpas-timers.py), so no source
+# changes are needed and results are as granular as the model's own
+# instrumentation (e.g. atm_advance_acoustic_step, atm_compute_dyn_tend).
+#
+# This is wall-clock timing only — not GPU kernel-level granularity. A
+# Nsight-based pass for true kernel times is a natural follow-up once this
+# baseline is in use.
+#
+# Security: self-hosted CIRRUS runners. Callers must use workflow_dispatch
+# only, same as _test-gpu.yml and _test-bfb.yml's gpu=true path.
+
+name: _test-perf
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_call:
+    inputs:
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: true
+        type: string
+      runner-group:
+        description: 'Runner group used for BOTH the CPU and GPU legs (same hardware is the point)'
+        required: false
+        type: string
+        default: 'CIRRUS-32x256-A10'
+      resolution:
+        description: 'Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)'
+        required: false
+        type: string
+        default: '120km'
+      run-duration:
+        description: 'config_run_duration override (D_HH:MM:SS)'
+        required: false
+        type: string
+        default: '0_00:12:00'
+      cpu-ranks:
+        description: 'MPI rank count for the CPU leg'
+        required: false
+        type: string
+        default: '32'
+      gpu-ranks:
+        description: 'MPI rank count for the GPU leg (typically 1 per GPU on the node)'
+        required: false
+        type: string
+        default: '1'
+      run-timeout:
+        description: 'Run step timeout in minutes (applies to both legs)'
+        required: false
+        type: string
+        default: '30'
+      target-routine:
+        description: >
+          Optional MPAS timer name to call out in the summary (e.g. the routine
+          a hack26_* branch is porting, such as atm_advance_acoustic_step).
+          Purely cosmetic — has no effect on what is measured.
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-cpu: ${{ steps.cpu-container.outputs.image }}
+      image-gpu: ${{ steps.gpu-container.outputs.image }}
+      mpas-version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github
+            src/core_atmosphere/Registry.xml
+          sparse-checkout-cone-mode: false
+
+      - uses: ./.github/actions/resolve-container
+        id: cpu-container
+        with:
+          compiler: nvhpc
+          mpi: ${{ inputs.mpi }}
+
+      - uses: ./.github/actions/resolve-container
+        id: gpu-container
+        with:
+          compiler: nvhpc
+          mpi: ${{ inputs.mpi }}
+          gpu: cuda
+
+      - uses: ./.github/actions/mpas-version
+        id: version
+
+  build:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: cpu
+            openacc: false
+            image: ${{ needs.config.outputs.image-cpu }}
+          - leg: gpu
+            openacc: true
+            image: ${{ needs.config.outputs.image-gpu }}
+    name: Build (${{ matrix.leg }})
+    runs-on:
+      group: ${{ inputs.runner-group }}
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A (double precision${{ matrix.openacc && ', OpenACC' || '' }})
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: nvhpc
+          use-pio: 'false'
+          openacc: ${{ matrix.openacc && 'true' || 'false' }}
+          precision: double
+          build-timeout: '45'
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-perf-${{ matrix.leg }}-${{ inputs.mpi }}
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: [config, build]
+    if: ${{ needs.build.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: cpu
+            openacc: false
+            image: ${{ needs.config.outputs.image-cpu }}
+            ranks: ${{ inputs.cpu-ranks }}
+          - leg: gpu
+            openacc: true
+            image: ${{ needs.config.outputs.image-gpu }}
+            ranks: ${{ inputs.gpu-ranks }}
+    name: Run (${{ matrix.leg }})
+    runs-on:
+      group: ${{ inputs.runner-group }}
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check GPU availability
+        if: ${{ matrix.openacc }}
+        shell: bash
+        run: |
+          echo "=== GPU Information ==="
+          nvidia-smi || echo "::warning::nvidia-smi failed"
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-perf-${{ matrix.leg }}-${{ inputs.mpi }}
+
+      - name: Run MPAS-A
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ matrix.ranks }}'
+          resolution: ${{ inputs.resolution }}
+          run-duration: ${{ inputs.run-duration }}
+          run-timeout: ${{ inputs.run-timeout }}
+          mpi-impl: ${{ inputs.mpi }}
+          working-dir: run-perf-${{ matrix.leg }}
+          strict-exit-check: 'false'
+
+      - name: Parse MPAS timers
+        uses: ./.github/actions/parse-mpas-timers
+        with:
+          log-dir: run-perf-${{ matrix.leg }}
+          output-file: mpas-timers-${{ matrix.leg }}.json
+
+      - name: Upload timer JSON
+        uses: actions/upload-artifact@v6
+        with:
+          name: perf-timers-${{ matrix.leg }}
+          path: mpas-timers-${{ matrix.leg }}.json
+          retention-days: 1
+
+  summarize:
+    needs: [config, run]
+    if: ${{ !cancelled() && needs.run.result == 'success' }}
+    name: Summarize CPU vs GPU
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - name: Download timer JSON (both legs)
+        uses: actions/download-artifact@v7
+        with:
+          pattern: perf-timers-*
+          path: perf-timers
+          merge-multiple: true
+
+      - name: Combine and summarize
+        env:
+          CPU_JSON: perf-timers/mpas-timers-cpu.json
+          GPU_JSON: perf-timers/mpas-timers-gpu.json
+          OUT_JSON: perf-result.json
+          OUT_MD: perf-summary.md
+          REF: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          RESOLUTION: ${{ inputs.resolution }}
+          RUN_DURATION: ${{ inputs.run-duration }}
+          COMPILER: nvhpc
+          MPI: ${{ inputs.mpi }}
+          CPU_RANKS: ${{ inputs.cpu-ranks }}
+          GPU_RANKS: ${{ inputs.gpu-ranks }}
+          RUNNER_GROUP: ${{ inputs.runner-group }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TARGET_ROUTINE: ${{ inputs.target-routine }}
+        run: |
+          python3 .github/scripts/summarize-perf.py
+          cat perf-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload perf result
+        uses: actions/upload-artifact@v6
+        with:
+          name: perf-result-${{ github.run_id }}
+          path: perf-result.json
+          retention-days: 90
+
+  cleanup:
+    needs: [run, summarize]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+    steps:
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-perf-") or startswith("perf-timers-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true
