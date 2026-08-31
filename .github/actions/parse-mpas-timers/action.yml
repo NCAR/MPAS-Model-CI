@@ -1,9 +1,7 @@
 name: 'Parse MPAS Timers'
 description: >
-  Parse the native MPAS-A timer table (log.atmosphere.0000.out) into JSON.
-  Works on both CPU and GPU builds since the native timer framework
-  (TIMER_LIB unset -> MPAS_NATIVE_TIMERS) is on by default; no build changes
-  required.
+  Parse the MPAS-A timer table from log.atmosphere.0000.out into JSON.
+  Works on both CPU and GPU builds
 
 inputs:
   log-dir:
