@@ -6,7 +6,9 @@ name: "BFB: Decomposition (1 vs 4 ranks)"
 on:
   workflow_dispatch:
   push:
-    branches: [hackathon, 'hackathon/**', 'hackathon-*', feature-ci-bfb]
+    branches: [hackathon, 'hackathon/**', 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**']
+  pull_request:
+    branches: [master, develop, 'hotfix-*', 'hotfix/**']
 
 jobs:
   test:
