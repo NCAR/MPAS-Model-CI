@@ -6,9 +6,9 @@ name: "NVHPC+MPICH (CPU)"
 on:
   workflow_dispatch:
   push:
-    branches: [master, 'hackathon-*']
+    branches: [master, develop, 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**']
   pull_request:
-    branches: [master, 'hackathon-*']
+    branches: [master, develop, 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**']
 
 jobs:
   test:

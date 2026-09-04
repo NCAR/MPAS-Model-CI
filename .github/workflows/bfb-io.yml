@@ -6,7 +6,9 @@ name: "BFB: I/O (SMIOL vs PIO)"
 on:
   workflow_dispatch:
   push:
-    branches: [hackathon, 'hackathon/**', 'hackathon-*', feature-ci-bfb]
+    branches: [hackathon, 'hackathon/**', 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**']
+  pull_request:
+    branches: [master, develop, 'hotfix-*', 'hotfix/**']
 
 jobs:
   test:
