@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.container.outputs.image }}
-      mpas-version: ${{ steps.version.outputs.version }}
+      ect-tag: ${{ steps.version.outputs.ect-tag }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -124,7 +124,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
+          key: ect-spinup-restart-${{ needs.config.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}
 
       - name: Download spin-up restart
         id: restart
@@ -132,7 +132,7 @@ jobs:
         run: |
           source .github/ci-config.env
           RESTART="${ECT_RESTART_FILE}"
-          RELEASE_TAG="ect-v${{ needs.config.outputs.mpas-version }}"
+          RELEASE_TAG="${{ needs.config.outputs.ect-tag }}"
 
           if [ -f "spinup-restart.nc" ]; then
             echo "Using cached restart file"
@@ -213,7 +213,7 @@ jobs:
         with:
           history-dir: ect-test-files
           label: gcc/openmpi/ect-standalone
-          mpas-version: ${{ needs.config.outputs.mpas-version }}
+          ect-tag: ${{ needs.config.outputs.ect-tag }}
 
   #===========================================================================
   # CLEANUP

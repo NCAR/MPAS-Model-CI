@@ -102,6 +102,8 @@ jobs:
     outputs:
       mpas-version: ${{ steps.version.outputs.mpas-version }}
       mpas-commit: ${{ steps.version.outputs.mpas-commit }}
+      version-series: ${{ steps.mpas_version.outputs.version-series }}
+      ect-tag: ${{ steps.mpas_version.outputs.ect-tag }}
     container:
       image: ${{ needs.prepare.outputs.container-image }}
 
@@ -170,7 +172,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
+          key: ect-spinup-restart-${{ needs.build.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}
 
       - name: Download executable
         if: steps.cache.outputs.cache-hit != 'true'
@@ -212,7 +214,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart-${{ hashFiles('.github/ci-config.env') }}
+          key: ect-spinup-restart-${{ needs.build.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}
 
       - name: Upload restart artifact
         uses: actions/upload-artifact@v6
@@ -463,9 +465,9 @@ jobs:
           fi
 
   #===========================================================================
-  # PUBLISH RESTART: Upload spin-up restart to ect-v{MPAS_VERSION}
+  # PUBLISH RESTART: Upload spin-up restart to ect-v{MAJOR.MINOR}
   # Runs after spinup regardless of ensemble/summary outcome.
-  # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
+  # Auto-creates the release (tagged by version series) if it doesn't exist.
   #===========================================================================
   publish-restart:
     needs: [build, spinup]
@@ -491,14 +493,15 @@ jobs:
         run: |
           source .github/ci-config.env
           VERSION="${{ needs.build.outputs.mpas-version }}"
-          TAG="ect-v${VERSION}"
+          SERIES="${{ needs.build.outputs.version-series }}"
+          TAG="${{ needs.build.outputs.ect-tag }}"
 
           # Create release if it doesn't exist
           if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             echo "Creating release ${TAG}..."
             gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" \
-              --title "ECT data (MPAS v${VERSION})" \
-              --notes "ECT ensemble summary and spin-up restart for MPAS v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
+              --title "ECT data (MPAS v${SERIES}.x)" \
+              --notes "ECT ensemble summary and spin-up restart shared by all MPAS v${SERIES}.x releases. Generated from v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
           fi
 
           RESTART_NAME="${ECT_RESTART_FILE}"
@@ -514,9 +517,9 @@ jobs:
           echo "  File: ${RESTART_NAME}.gz ($(du -h "${RESTART_NAME}.gz" | cut -f1))"
 
   #===========================================================================
-  # PUBLISH SUMMARY: Upload ensemble summary to ect-v{MPAS_VERSION}
+  # PUBLISH SUMMARY: Upload ensemble summary to ect-v{MAJOR.MINOR}
   # Only runs when summary generation succeeds.
-  # Auto-creates the release (tagged by MPAS version) if it doesn't exist.
+  # Auto-creates the release (tagged by version series) if it doesn't exist.
   #===========================================================================
   publish-summary:
     needs: [build, generate-summary]
@@ -543,14 +546,15 @@ jobs:
         run: |
           source .github/ci-config.env
           VERSION="${{ needs.build.outputs.mpas-version }}"
-          TAG="ect-v${VERSION}"
+          SERIES="${{ needs.build.outputs.version-series }}"
+          TAG="${{ needs.build.outputs.ect-tag }}"
 
           # Create release if it doesn't exist
           if ! gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             echo "Creating release ${TAG}..."
             gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" \
-              --title "ECT data (MPAS v${VERSION})" \
-              --notes "ECT ensemble summary and spin-up restart for MPAS v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
+              --title "ECT data (MPAS v${SERIES}.x)" \
+              --notes "ECT ensemble summary and spin-up restart shared by all MPAS v${SERIES}.x releases. Generated from v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
           fi
 
           SUMMARY_NAME="${{ needs.generate-summary.outputs.summary-name }}"

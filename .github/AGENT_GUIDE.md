@@ -58,7 +58,7 @@ tests/                           # pFUnit test infrastructure (repo root)
 
 Test case archives, ECT ensemble summary files, and ECT spin-up restarts are stored as **GitHub release assets on this repository** (`NCAR/MPAS-Model-CI`). Each asset is versioned by its own release tag (independent of the others).
 
-Current tags: `testdata-240km-v1`, `testdata-120km-v1` (see `RELEASE_TESTDATA_*` in `ci-config.env`), plus `ect-v{MPAS_VERSION}` for ECT data — its tag is derived at runtime from `src/core_atmosphere/Registry.xml` via the `mpas-version` composite action, not from `ci-config.env`.
+Current tags: `testdata-240km-v1`, `testdata-120km-v1` (see `RELEASE_TESTDATA_*` in `ci-config.env`), plus `ect-v{MAJOR.MINOR}` for ECT data — its tag is derived at runtime from `src/core_atmosphere/Registry.xml` via the `mpas-version` composite action, not from `ci-config.env`. One ECT release serves every patch release in a series (`ect-v8.4` covers 8.4.0, 8.4.1, 8.4.2, …), so a hotfix version bump does not require regenerating the 200-member ensemble.
 
 **Adding a new test case:** build the archive (`{resolution}.tar.gz`), create a release (`gh release create … --repo NCAR/MPAS-Model-CI`), attach the asset, then set `RELEASE_TESTDATA_{RES}` in `ci-config.env` (resolution uppercased with `-` → `_` in the variable name, e.g. `120KM`).
 
@@ -70,7 +70,8 @@ Current tags: `testdata-240km-v1`, `testdata-120km-v1` (see `RELEASE_TESTDATA_*`
 - **`develop`** — integration branch matching upstream MPAS-Dev/MPAS-Model `develop` (feature PRs land here first).
 - **`PRtest-*`** — temporary branches for testing contributor PRs: base on **`develop`**, overlay CI from `master`, cherry-pick the PR commit(s), push. Auto-runs **CPU ECT subsets** (and BFB callers). Prefer this over `hackathon-*` for PR validation.
 - **`hackathon-*`** — same auto-CI as `PRtest-*` (kept for hackathon experiments).
-- **GPU ECT** stays **`workflow_dispatch` only** (see Security). CPU BFB callers also run on push to `hackathon`, `hackathon/**`, `hackathon-*`, `PRtest-*`, or legacy `feature-ci-bfb`.
+- **`hotfix-*`** / **`hotfix/**`** — same auto-CI as `PRtest-*`, so gitflow hotfix branches (e.g. `hotfix-v8.4.2`) are tested without renaming them. A patch bump reuses the series ECT data (`ect-v8.4`); see Test Data.
+- **GPU ECT** stays **`workflow_dispatch` only** (see Security). CPU BFB callers run on push to `hackathon`, `hackathon/**`, `hackathon-*`, `PRtest-*`, `hotfix-*`, `hotfix/**`, and on PRs targeting `master`, `develop`, or a `hotfix` branch.
 
 ## Workflow Architecture
 
@@ -81,7 +82,7 @@ Each compiler+MPI combination has a thin caller workflow that invokes a reusable
 - **CPU subsets** call `_test-compiler.yml` with `compiler` and `mpi` inputs
 - **GPU subsets** call `_test-gpu.yml` with `mpi` input (always NVHPC)
 
-**MPICH callers** (`test-gcc-mpich`, `test-intel-mpich`, `test-nvhpc-mpich`) run on push/PR to `master`/`develop` and to **`PRtest-*`** / **`hackathon-*`**.
+**MPICH callers** (`test-gcc-mpich`, `test-intel-mpich`, `test-nvhpc-mpich`) run on push/PR to `master`/`develop` and to **`PRtest-*`** / **`hackathon-*`** / **`hotfix-*`**.
 **compile-nvhpc-cuda-mpich** (NVHPC + OpenACC compile-only on GitHub-hosted runners) also runs on push/PR to those branches.
 **OpenMPI CPU callers** (`test-*-openmpi`) stay **`workflow_dispatch` only** (optional; OpenMPI regressions).
 **GPU ECT callers** (`test-gpu-mpich`, `test-gpu-openmpi`) are **`workflow_dispatch` only** (self-hosted CIRRUS).
@@ -127,7 +128,7 @@ Key settings:
 - `OPENMPI_RUN_FLAGS` — extra `mpirun` flags for OpenMPI in containers (root + oversubscribe). MPICH needs no equivalent. Comment in `ci-config.env` lists the consumer sites for adding analogous flags later.
 - `RELEASE_TESTDATA_{RES}` — GitHub release tag for `{resolution}.tar.gz` test archives (`RES` uppercased, `-` → `_`)
 - `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
-- The ECT release tag (`ect-v{MPAS_VERSION}`) is **not** stored here; it is derived at runtime from `src/core_atmosphere/Registry.xml` by the `mpas-version` composite action (see below). This guarantees the writer (`ect-ensemble-gen.yml`) and readers (`_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `validate-ect`) can never drift apart.
+- The ECT release tag (`ect-v{MAJOR.MINOR}`) is **not** stored here; it is derived at runtime from `src/core_atmosphere/Registry.xml` by the `mpas-version` composite action (see below). This guarantees the writer (`ect-ensemble-gen.yml`) and readers (`_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `validate-ect`) can never drift apart. Because the tag drops the patch component, patch releases within a series share one ensemble.
 - `PYCECT_TAG` — PyCECT git tag for `validate-ect`
 - `BFB_*` — default resolution, duration, and run timeout for bit-for-bit workflows; per-variant overrides live in the `variants` JSON passed to `_test-bfb.yml`
 
@@ -187,10 +188,10 @@ Runs a standard MPAS-A case: uses `download-testdata`, copies the extracted tree
 Runs perturbed ensemble members for ECT. Requires explicit `run-duration` and `run-timeout` inputs. Sources `ci-config.env` for ECT settings (perturbation variable/magnitude, excluded-vars path, etc.). Activates conda, installs netCDF4/numpy, loops through members applying theta perturbation, runs the model, and trims history files. Supports restart mode.
 
 ### validate-ect
-Takes a required `mpas-version` input and builds the release tag as `ect-v{mpas-version}`. Sources `ci-config.env` for summary filename, time slice, and PyCECT tag (no `RELEASE_ECT` lookup). Downloads the summary from the matching release URL, installs deps, clones PyCECT at `PYCECT_TAG`, runs validation, and writes an enriched result file with dimension metadata.
+Takes a required `ect-tag` input (the release tag emitted by the `mpas-version` action). Sources `ci-config.env` for summary filename, time slice, and PyCECT tag (no `RELEASE_ECT` lookup). Downloads the summary from the matching release URL, installs deps, clones PyCECT at `PYCECT_TAG`, runs validation, and writes an enriched result file with dimension metadata.
 
 ### mpas-version
-Reads the MPAS version string from `src/core_atmosphere/Registry.xml` using `python3` + `xml.etree.ElementTree`. Strict — fails the workflow if the file is missing or the `<registry version="…">` attribute cannot be parsed (no silent `unknown` fallback). Single source of truth for the `ect-v{MPAS_VERSION}` release tag used by `_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `ect-ensemble-gen.yml`, and `validate-ect`. Workflows that consume the version typically extract it once in their `config` job and pass it to downstream jobs as a job output.
+Reads the MPAS version string from `src/core_atmosphere/Registry.xml` using `python3` + `xml.etree.ElementTree`. Strict — fails the workflow if the file is missing, the `<registry version="…">` attribute cannot be parsed (no silent `unknown` fallback), or the version has no `MAJOR.MINOR` prefix. Outputs `version` (`8.4.2`), `version-series` (`8.4`), and `ect-tag` (`ect-v8.4`). Single source of truth for the ECT release tag used by `_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `ect-ensemble-gen.yml`, and `validate-ect` — consumers pass `ect-tag` through rather than rebuilding the tag, so the writer and readers cannot drift. Workflows extract it once in their `config` job and pass it to downstream jobs as a job output.
 
 ### print-mpas-logs
 Dumps MPAS per-rank log files (`log.atmosphere.<rank>.out` / `.err`) to the workflow log inside collapsible `::group::` blocks so the GitHub Actions UI gives one expandable section per file. Inputs: `log-dir` (required), `pattern` (default `log.atmosphere.*`), `max-lines` (default empty = full file; set to N to `tail -n N`). Read-only and never fails on its own — call sites should add `if: always()` so logs print on both success and failure. Already wired into `run-mpas` (reads from the run working dir) and `run-perturb-mpas` (reads from `output-dir`, where the per-member loop has copied each rank's `.out` and `.err` before tearing down the rundir).
