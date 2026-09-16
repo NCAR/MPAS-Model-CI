@@ -1,0 +1,121 @@
+# Reusable workflow: validate that MPAS-Model builds via its native CMake
+# build (MPAS_CORE / MPAS_COMPILER / MPAS_PRECISION) — the same build path
+# mpas-bundle uses to compile MPAS-A as a JEDI-MPAS component.
+#
+# This does NOT build mpas-bundle or the JEDI stack (OOPS/IODA/UFO/SABER/
+# CRTM) — it only exercises standalone MPAS's own CMakeLists.txt, which
+# mpas-bundle depends on being correct. Build-only for now; a run step
+# can be added later once the build itself is validated.
+
+name: _test-cmake
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: "Compiler family (gcc, nvhpc, oneapi). MPAS's CMake build supports gnu/intel/nvhpc only (no clang)."
+        required: false
+        type: string
+        default: 'gcc'
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: false
+        type: string
+        default: 'openmpi'
+      precision:
+        description: 'Floating-point precision (single or double)'
+        required: false
+        type: string
+        default: 'double'
+      mpas-repository:
+        description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model). Empty = this repo.'
+        required: false
+        type: string
+        default: ''
+      mpas-ref:
+        description: 'Git ref in the MPAS source repo (branch, tag, SHA)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+
+  build:
+    needs: config
+    name: CMake Build (${{ inputs.compiler }}, ${{ inputs.precision }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ inputs.mpas-ref || '' }}
+          submodules: 'true'
+          persist-credentials: false
+
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        if: ${{ inputs.mpas-repository != '' }}
+        with:
+          path: _ci
+          sparse-checkout: .github
+          persist-credentials: false
+
+      - name: Overlay CI infrastructure
+        if: ${{ inputs.mpas-repository != '' }}
+        shell: bash
+        run: |
+          cp -r _ci/.github . && rm -rf _ci
+          echo "## Source: ${{ inputs.mpas-repository }}@${{ inputs.mpas-ref }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build MPAS-A via CMake
+        uses: ./.github/actions/build-mpas-cmake
+        with:
+          compiler: ${{ inputs.compiler }}
+          precision: ${{ inputs.precision }}
+
+      - name: Upload executable
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: exe-cmake-${{ inputs.compiler }}-${{ inputs.mpi }}
+          path: build/atmosphere_model
+          retention-days: 1
+
+  cleanup:
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+    permissions:
+      actions: write
+
+    steps:
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-cmake-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true

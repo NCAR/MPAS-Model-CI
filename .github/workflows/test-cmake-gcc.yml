@@ -1,0 +1,14 @@
+# Subset CI: validate MPAS-Model's native CMake build (the build path
+# mpas-bundle uses for JEDI-MPAS) with GNU + OpenMPI.
+
+name: "CMake Build (GNU+OpenMPI)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-cmake.yml
+    with:
+      compiler: gcc
+      mpi: openmpi

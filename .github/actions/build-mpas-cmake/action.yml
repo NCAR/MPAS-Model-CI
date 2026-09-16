@@ -1,0 +1,113 @@
+name: 'Build MPAS (CMake)'
+description: >
+  Build MPAS-Atmosphere using MPAS's native CMake build (MPAS_CORE /
+  MPAS_COMPILER / MPAS_PRECISION cache variables) — the same build path
+  mpas-bundle uses to compile MPAS-A as a JEDI-MPAS component. This is
+  distinct from the Makefile-based build used by build-mpas.
+
+inputs:
+  compiler:
+    description: 'Compiler family (gcc, nvhpc, oneapi). Mapped to gnu/nvhpc/intel via ci-config.env.'
+    required: true
+  precision:
+    description: 'Floating-point precision (single or double). mpas-bundle default is double.'
+    required: false
+    default: 'double'
+  build-timeout:
+    description: 'Build timeout in minutes'
+    required: false
+    default: '20'
+
+outputs:
+  executable:
+    description: 'Path to built executable'
+    value: ${{ steps.build.outputs.executable }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Build MPAS-A (CMake)
+      id: build
+      shell: bash
+      run: |
+        # Source container environment if available.
+        # This sets NETCDF, PNETCDF, and other library root paths.
+        if [ -f /container/config_env.sh ]; then
+          echo "Sourcing container environment from /container/config_env.sh"
+          source /container/config_env.sh
+        fi
+
+        # MPAS's CMakeLists.txt sets CMAKE_C_COMPILER / CMAKE_Fortran_COMPILER
+        # itself based on MPAS_COMPILER, so we don't set CC/FC here.
+
+        # cpp is used by the Registry preprocessing step, same as the
+        # Makefile build.
+        if ! command -v cpp &>/dev/null; then
+          echo "cpp not found, installing..."
+          if command -v zypper &>/dev/null; then
+            zypper install -y --no-recommends cpp
+          elif command -v dnf &>/dev/null; then
+            dnf install -y cpp
+          elif command -v apt-get &>/dev/null; then
+            apt-get update && apt-get install -y cpp
+          fi
+        fi
+
+        # Map compiler family -> MPAS_COMPILER via ci-config.env lookup
+        CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
+        if [ -f "${CI_CONFIG}" ]; then
+          source "${CI_CONFIG}"
+        fi
+
+        VARNAME="CMAKE_COMPILER_${{ inputs.compiler }}"
+        MPAS_COMPILER="${!VARNAME}"
+        if [ -z "${MPAS_COMPILER}" ]; then
+          echo "::error::No CMake compiler mapping for '${{ inputs.compiler }}'. Add CMAKE_COMPILER_${{ inputs.compiler }}= to .github/ci-config.env (MPAS's CMake build only supports gnu, intel, nvhpc)."
+          exit 1
+        fi
+
+        # MPAS's cmake/FindNetCDF.cmake and FindPNETCDF.cmake search for
+        # NETCDF_ROOT / PNETCDF_ROOT (and _DIR / _PATH variants) — not the
+        # plain NETCDF / PNETCDF names the Makefile build uses directly.
+        # Re-export under both so either naming convention is picked up.
+        [ -n "${NETCDF}" ]  && export NETCDF_ROOT="${NETCDF_ROOT:-$NETCDF}"
+        [ -n "${PNETCDF}" ] && export PNETCDF_ROOT="${PNETCDF_ROOT:-$PNETCDF}"
+
+        # We don't point MPAS's CMake build at a PIO installation here, so
+        # FindPIO.cmake won't find one and the build uses SMIOL (MPAS's
+        # built-in lightweight I/O library) instead — matching the
+        # use-pio: false / SMIOL default in build-mpas.
+
+        # MPAS's top-level CMakeLists.txt also does find_package(HDF5 REQUIRED)
+        # (it picks up HDF5 via NetCDF's link flags).
+
+        echo "Build configuration:"
+        echo "  Compiler input:  ${{ inputs.compiler }}"
+        echo "  MPAS_COMPILER:   ${MPAS_COMPILER}"
+        echo "  MPAS_PRECISION:  ${{ inputs.precision }}"
+        echo "  NETCDF_ROOT:     ${NETCDF_ROOT:-not set}"
+        echo "  PNETCDF_ROOT:    ${PNETCDF_ROOT:-not set}"
+        echo "  Parallel jobs:   ${MAKE_J_PROCS:-$(nproc)}"
+
+        mkdir -p build && cd build
+
+        cmake .. \
+          -DMPAS_CORE=atmosphere \
+          -DMPAS_COMPILER="${MPAS_COMPILER}" \
+          -DMPAS_PRECISION="${{ inputs.precision }}"
+
+        timeout ${{ inputs.build-timeout }}m \
+          cmake --build . --parallel "${MAKE_J_PROCS:-$(nproc)}"
+
+        echo "executable=$(pwd)/atmosphere_model" >> $GITHUB_OUTPUT
+
+    - name: Verify executable
+      shell: bash
+      run: |
+        EXE="build/atmosphere_model"
+        if [ ! -f "${EXE}" ]; then
+          echo "ERROR: ${EXE} not found!"
+          exit 1
+        fi
+        ls -la "${EXE}"
+        file "${EXE}"
