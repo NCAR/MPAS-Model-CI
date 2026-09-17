@@ -1,0 +1,38 @@
+# Subset CI: validate MPAS's native CMake build (the build path mpas-bundle
+# uses for JEDI-MPAS) across all three supported MPAS_COMPILER families —
+# gcc (-> gnu), oneapi (-> intel), nvhpc (-> nvhpc) — with OpenMPI.
+#
+# Caveat: the Makefile build applies an MPAS_MPI_F08=0 workaround for
+# oneapi/nvhpc (a known MPICH4 mpi_f08 binding bug). MPAS's CMake build
+# doesn't appear to run the same mpi_f08 autodetection, so it likely
+# defaults to the plain 'mpi' module and avoids the bug — but that's
+# inferred, not confirmed. If the oneapi/nvhpc legs fail with an
+# mpi_f08-related compile error, that's the first thing to check.
+
+name: "CMake Build Matrix"
+
+on:
+  workflow_dispatch:
+  # TEMPORARY while these workflows only exist on a feature branch:
+  # workflow_dispatch can't be listed/triggered until the file is on the
+  # default branch (master), so a scoped push trigger lets us test it here
+  # first. Remove this `push:` block once this is merged to master.
+  push:
+    branches:
+      - 'feature-ci/cmake-build'
+    paths:
+      - '.github/workflows/test-cmake-matrix.yml'
+      - '.github/workflows/_test-cmake.yml'
+      - '.github/actions/build-mpas-cmake/**'
+      - '.github/ci-config.env'
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, oneapi, nvhpc]
+    uses: ./.github/workflows/_test-cmake.yml
+    with:
+      compiler: ${{ matrix.compiler }}
+      mpi: openmpi
