@@ -99,12 +99,12 @@ runs:
         timeout ${{ inputs.build-timeout }}m \
           cmake --build . --parallel "${MAKE_J_PROCS:-$(nproc)}"
 
-        echo "executable=$(pwd)/atmosphere_model" >> $GITHUB_OUTPUT
+        echo "executable=$(pwd)/bin/mpas_atmosphere" >> $GITHUB_OUTPUT
 
     - name: Verify executable
       shell: bash
       run: |
-        EXE="build/atmosphere_model"
+        EXE="build/bin/mpas_atmosphere"
         if [ ! -f "${EXE}" ]; then
           echo "ERROR: ${EXE} not found!"
           exit 1

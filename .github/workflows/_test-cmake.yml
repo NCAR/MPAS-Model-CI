@@ -97,7 +97,7 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: exe-cmake-${{ inputs.compiler }}-${{ inputs.mpi }}
-          path: build/atmosphere_model
+          path: build/bin/mpas_atmosphere
           retention-days: 1
 
   cleanup:
