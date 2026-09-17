@@ -5,6 +5,18 @@ name: "CMake Build (GNU+OpenMPI)"
 
 on:
   workflow_dispatch:
+  # TEMPORARY while this workflow only exists on a feature branch:
+  # workflow_dispatch can't be listed/triggered until the file is on the
+  # default branch (master), so a scoped push trigger lets us test it here
+  # first. Remove this `push:` block once this is merged to master.
+  push:
+    branches:
+      - 'feature-ci/cmake-build'
+    paths:
+      - '.github/workflows/test-cmake-gcc.yml'
+      - '.github/workflows/_test-cmake.yml'
+      - '.github/actions/build-mpas-cmake/**'
+      - '.github/ci-config.env'
 
 jobs:
   test:
