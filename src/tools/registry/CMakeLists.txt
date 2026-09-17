@@ -14,4 +14,10 @@ foreach(_core IN LISTS MPAS_CORES)
     target_compile_definitions(mpas_parse_${_core} PRIVATE MPAS_NAMELIST_SUFFIX=${_core}
                                                            MPAS_GIT_VERSION=${MPAS_GIT_VERSION}
                                                            MPAS_EXE_NAME=${_core}_model)
+    # nvfortran fails on the continuation-line form gen_inc.c emits for
+    # PACKAGE_LOGIC_PRINT (NVFORTRAN-S-0290). Defining CPRPGI, as the
+    # Makefile's nvhpc target does, switches to the safe form.
+    if(CMAKE_C_COMPILER_ID MATCHES "NVHPC")
+        target_compile_definitions(mpas_parse_${_core} PRIVATE CPRPGI)
+    endif()
 endforeach()
