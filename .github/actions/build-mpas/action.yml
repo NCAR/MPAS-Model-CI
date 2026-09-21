@@ -9,6 +9,10 @@ inputs:
     description: 'Use PIO library (true/false)'
     required: false
     default: 'false'
+  scotch-root:
+    description: 'Path to a PT-SCOTCH install (e.g. from ./.github/actions/build-scotch). Empty = build without Scotch.'
+    required: false
+    default: ''
   openacc:
     description: 'Enable OpenACC (true/false)'
     required: false
@@ -79,7 +83,14 @@ runs:
         if [ "${{ inputs.openacc }}" = "true" ]; then
           export OPENACC=true
         fi
-        
+
+        # Set up PT-SCOTCH graph partitioning library
+        if [ -n "${{ inputs.scotch-root }}" ]; then
+          export SCOTCH="${{ inputs.scotch-root }}"
+        else
+          unset SCOTCH
+        fi
+
         echo "Build configuration:"
         echo "  Compiler input: ${{ inputs.compiler }}"
         echo "  COMPILER_FAMILY: ${COMPILER_FAMILY}"
@@ -87,6 +98,7 @@ runs:
         echo "  PNETCDF: ${PNETCDF:-not set}"
         echo "  USE_PIO2: ${USE_PIO2}"
         echo "  OPENACC: ${OPENACC:-false}"
+        echo "  SCOTCH: ${SCOTCH:-not set}"
         echo "  PRECISION: ${{ inputs.precision }}"
         
         # Settings from .github/ci-config.env — edit that file to change targets/workarounds
@@ -125,8 +137,9 @@ runs:
         fi
 
         timeout ${{ inputs.build-timeout }}m \
-          make ${MAKE_TARGET} CORE=atmosphere ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}
-        
+          make ${MAKE_TARGET} CORE=atmosphere ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)} \
+          | tee build.log
+
         # Set output
         echo "executable=$(pwd)/atmosphere_model" >> $GITHUB_OUTPUT
 
@@ -139,3 +152,14 @@ runs:
         fi
         ls -la atmosphere_model
         file atmosphere_model
+
+    - name: Verify PT-SCOTCH linkage
+      if: ${{ inputs.scotch-root != '' }}
+      shell: bash
+      run: |
+        if ! grep -q "MPAS has been linked with the Scotch graph partitioning library" build.log; then
+          echo "::error::scotch-root was set but the Makefile did not report a successful Scotch link. Check build.log."
+          grep -i scotch build.log || true
+          exit 1
+        fi
+        echo "Confirmed: MPAS linked with PT-SCOTCH."
