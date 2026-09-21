@@ -22,6 +22,17 @@ on:
         options:
           - mpich
           - openmpi
+      precision:
+        description: >
+          Floating-point precision for both legs. Single matches typical
+          production configuration and halves per-message halo-exchange
+          size vs double (helps /dev/shm pressure at high rank counts).
+        required: false
+        default: single
+        type: choice
+        options:
+          - single
+          - double
       resolution:
         description: Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)
         required: false
@@ -55,6 +66,7 @@ jobs:
     uses: ./.github/workflows/_test-perf.yml
     with:
       mpi: ${{ inputs.mpi }}
+      precision: ${{ inputs.precision }}
       resolution: ${{ inputs.resolution }}
       run-duration: ${{ inputs.run_duration }}
       cpu-ranks: ${{ inputs.cpu_ranks }}

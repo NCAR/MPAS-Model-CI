@@ -53,6 +53,16 @@ on:
         required: false
         type: string
         default: '30'
+      precision:
+        description: >
+          Floating-point precision to build both legs with (single or
+          double). Defaults to single: it matches typical production
+          configuration, and halves the per-message size in MPI halo
+          exchanges relative to double, which also eases shared-memory
+          ('/dev/shm') pressure at high rank counts.
+        required: false
+        type: string
+        default: 'single'
       target-routine:
         description: >
           Optional MPAS timer name to call out in the summary (e.g. the routine
@@ -120,13 +130,13 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: Build MPAS-A (double precision${{ matrix.openacc && ', OpenACC' || '' }})
+      - name: Build MPAS-A (${{ inputs.precision }} precision${{ matrix.openacc && ', OpenACC' || '' }})
         uses: ./.github/actions/build-mpas
         with:
           compiler: nvhpc
           use-pio: 'false'
           openacc: ${{ matrix.openacc && 'true' || 'false' }}
-          precision: double
+          precision: ${{ inputs.precision }}
           build-timeout: '45'
 
       - name: Upload executable
@@ -186,6 +196,12 @@ jobs:
           mpi-impl: ${{ inputs.mpi }}
           working-dir: run-perf-${{ matrix.leg }}
           strict-exit-check: 'false'
+          # Hydra doesn't bind processes to cores by default, which lets the
+          # OS scheduler migrate ranks mid-run and adds noise to a perf
+          # comparison. Scoped to this workflow via run-mpas's opt-in
+          # mpi-run-flags input -- does not touch ci-config.env, so no other
+          # workflow that calls run-mpas is affected.
+          mpi-run-flags: '-bind-to core'
 
       - name: Parse MPAS timers
         uses: ./.github/actions/parse-mpas-timers
@@ -229,6 +245,7 @@ jobs:
           RUN_DURATION: ${{ inputs.run-duration }}
           COMPILER: nvhpc
           MPI: ${{ inputs.mpi }}
+          PRECISION: ${{ inputs.precision }}
           CPU_RANKS: ${{ inputs.cpu-ranks }}
           GPU_RANKS: ${{ inputs.gpu-ranks }}
           RUNNER_GROUP: CIRRUS-32x256-A10

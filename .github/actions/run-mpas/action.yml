@@ -38,6 +38,14 @@ inputs:
     description: 'Fail on non-zero exit code (default true). Set false when gfortran IEEE warnings produce non-zero exit but model output is valid.'
     required: false
     default: 'true'
+  mpi-run-flags:
+    description: >
+      Extra flags appended to the mpirun invocation (e.g. '-bind-to core').
+      Opt-in and additive: empty by default, so existing callers are
+      unaffected. Applied on top of OPENMPI_RUN_FLAGS/MPICH_RUN_FLAGS,
+      regardless of mpi-impl.
+    required: false
+    default: ''
 
 outputs:
   log-dir:
@@ -134,6 +142,11 @@ runs:
         MPI_FLAGS=""
         if [ "${MPI_IMPL}" = "openmpi" ]; then
           MPI_FLAGS="${OPENMPI_RUN_FLAGS:---allow-run-as-root --oversubscribe}"
+        elif [ "${MPI_IMPL}" = "mpich" ]; then
+          MPI_FLAGS="${MPICH_RUN_FLAGS:-}"
+        fi
+        if [ -n "${{ inputs.mpi-run-flags }}" ]; then
+          MPI_FLAGS="${MPI_FLAGS} ${{ inputs.mpi-run-flags }}"
         fi
 
         ulimit -s unlimited 2>/dev/null || echo "Warning: Could not set unlimited stack size"
@@ -147,6 +160,9 @@ runs:
         echo "  Available CPUs: $(nproc 2>/dev/null || echo unknown)"
         echo "  Available RAM: $(free -m 2>/dev/null | awk '/^Mem:/{print $2 "MB"}' || echo unknown)"
         echo "  LD_LIBRARY_PATH: ${LD_LIBRARY_PATH:-not set}"
+        echo "  CPU topology:"
+        lscpu 2>/dev/null | grep -E "^CPU\(s\)|Thread\(s\) per core|Core\(s\) per socket|Socket\(s\)|NUMA node" | sed 's/^/    /' \
+          || echo "    lscpu not available"
 
         set +e
         timeout ${TIMEOUT}m mpirun -n ${{ inputs.num-procs }} ${MPI_FLAGS} ./atmosphere_model

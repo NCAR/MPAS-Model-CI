@@ -10,7 +10,7 @@ need a fragile positional CLI.
 
 Required env vars: CPU_JSON, GPU_JSON, OUT_JSON, OUT_MD
 Optional metadata env vars (all default to "unknown" if unset):
-  REF, SHA, RESOLUTION, RUN_DURATION, COMPILER, MPI,
+  REF, SHA, RESOLUTION, RUN_DURATION, COMPILER, MPI, PRECISION,
   CPU_RANKS, GPU_RANKS, RUNNER_GROUP, RUN_ID, RUN_URL, TARGET_ROUTINE
 """
 
@@ -46,6 +46,7 @@ def main() -> int:
         "run_duration": os.environ.get("RUN_DURATION", "unknown"),
         "compiler": os.environ.get("COMPILER", "unknown"),
         "mpi": os.environ.get("MPI", "unknown"),
+        "precision": os.environ.get("PRECISION", "unknown"),
         "cpu_ranks": os.environ.get("CPU_RANKS", "unknown"),
         "gpu_ranks": os.environ.get("GPU_RANKS", "unknown"),
         "runner_group": os.environ.get("RUNNER_GROUP", "unknown"),
@@ -104,7 +105,8 @@ def main() -> int:
         f"- **Run duration:** {meta['run_duration']}"
     )
     lines.append(
-        f"- **Compiler/MPI:** {meta['compiler']}/{meta['mpi']}  "
+        f"- **Compiler/MPI:** {meta['compiler']}/{meta['mpi']} "
+        f"({meta['precision']} precision)  "
         f"- **Ranks:** CPU={meta['cpu_ranks']}, GPU={meta['gpu_ranks']}  "
         f"- **Runner group:** {meta['runner_group']} (same hardware, both legs)"
     )
