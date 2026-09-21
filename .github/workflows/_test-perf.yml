@@ -54,12 +54,7 @@ on:
         type: string
         default: '30'
       precision:
-        description: >
-          Floating-point precision to build both legs with (single or
-          double). Defaults to single: it matches typical production
-          configuration, and halves the per-message size in MPI halo
-          exchanges relative to double, which also eases shared-memory
-          ('/dev/shm') pressure at high rank counts.
+        description: 'Floating-point precision to build both legs with (single or double)'
         required: false
         type: string
         default: 'single'

@@ -23,10 +23,7 @@ on:
           - mpich
           - openmpi
       precision:
-        description: >
-          Floating-point precision for both legs. Single matches typical
-          production configuration and halves per-message halo-exchange
-          size vs double (helps /dev/shm pressure at high rank counts).
+        description: Floating-point precision for both legs
         required: false
         default: single
         type: choice
