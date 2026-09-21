@@ -12,6 +12,15 @@ set -euo pipefail
 : "${SCOTCH_VERSION:?SCOTCH_VERSION not set}"
 : "${SCOTCH_PREFIX:?SCOTCH_PREFIX not set}"
 
+# Container images put the compiler/MPI toolchain on PATH via this script
+# (same as build-mpas). Without it, cmake can fail to find a C compiler at all
+# ("CMAKE_C_COMPILER not set, after EnableLanguage").
+if [ -f /container/config_env.sh ]; then
+  echo "Sourcing container environment from /container/config_env.sh"
+  # shellcheck source=/dev/null
+  source /container/config_env.sh
+fi
+
 if [ -f "${SCOTCH_PREFIX}/include/ptscotch.h" ] && [ -f "${SCOTCH_PREFIX}/lib64/libptscotch.a" ]; then
   echo "=== PT-SCOTCH already installed at ${SCOTCH_PREFIX} (cache hit) ==="
   exit 0
@@ -32,6 +41,11 @@ if ! command -v cmake &>/dev/null; then
 fi
 cmake --version
 
+if ! command -v mpicc &>/dev/null; then
+  echo "::error::mpicc not found on PATH (even after sourcing /container/config_env.sh)."
+  exit 1
+fi
+
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "${WORKDIR}"' EXIT
 
@@ -48,12 +62,13 @@ mkdir -p "${BUILD_DIR}"
 
 echo "=== Configuring PT-SCOTCH (static, MPI enabled) ==="
 cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" \
+  -DCMAKE_C_COMPILER="$(command -v mpicc)" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="${SCOTCH_PREFIX}" \
   -DCMAKE_INSTALL_LIBDIR=lib64 \
   -DBUILD_SHARED_LIBS=OFF \
   -DBUILD_PTSCOTCH=ON
-  
+
 echo "=== Building PT-SCOTCH ==="
 cmake --build "${BUILD_DIR}" --parallel "$(nproc)"
 
