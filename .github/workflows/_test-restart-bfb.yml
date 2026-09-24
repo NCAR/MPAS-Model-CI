@@ -271,8 +271,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp "restart-run-a/run-a/restart.${{ needs.run-a.outputs.midpoint_file_ts }}.nc" \
-             "run-b/restart.${{ needs.run-a.outputs.midpoint_file_ts }}.nc"
+          SRC=$(find restart-run-a -name "restart.${{ needs.run-a.outputs.midpoint_file_ts }}.nc")
+          cp "${SRC}" "run-b/restart.${{ needs.run-a.outputs.midpoint_file_ts }}.nc"
 
       - name: Configure namelist and streams for restart
         shell: bash
