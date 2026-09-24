@@ -180,7 +180,7 @@ jobs:
         with:
           name: exe-perf-${{ matrix.leg }}-${{ inputs.mpi }}
 
-      - name: Run MPAS-A
+      - name: Run MPAS-A (rep 1/3)
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
@@ -189,7 +189,7 @@ jobs:
           run-duration: ${{ inputs.run-duration }}
           run-timeout: ${{ inputs.run-timeout }}
           mpi-impl: ${{ inputs.mpi }}
-          working-dir: run-perf-${{ matrix.leg }}
+          working-dir: run-perf-${{ matrix.leg }}-rep1
           strict-exit-check: 'false'
           # Hydra doesn't bind processes to cores by default, which lets the
           # OS scheduler migrate ranks mid-run and adds noise to a perf
@@ -198,11 +198,58 @@ jobs:
           # workflow that calls run-mpas is affected.
           mpi-run-flags: '-bind-to core'
 
-      - name: Parse MPAS timers
+      - name: Parse MPAS timers (rep 1/3)
         uses: ./.github/actions/parse-mpas-timers
         with:
-          log-dir: run-perf-${{ matrix.leg }}
-          output-file: mpas-timers-${{ matrix.leg }}.json
+          log-dir: run-perf-${{ matrix.leg }}-rep1
+          output-file: mpas-timers-${{ matrix.leg }}-rep1.json
+
+      - name: Run MPAS-A (rep 2/3)
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ matrix.ranks }}'
+          resolution: ${{ inputs.resolution }}
+          run-duration: ${{ inputs.run-duration }}
+          run-timeout: ${{ inputs.run-timeout }}
+          mpi-impl: ${{ inputs.mpi }}
+          working-dir: run-perf-${{ matrix.leg }}-rep2
+          strict-exit-check: 'false'
+          mpi-run-flags: '-bind-to core'
+
+      - name: Parse MPAS timers (rep 2/3)
+        uses: ./.github/actions/parse-mpas-timers
+        with:
+          log-dir: run-perf-${{ matrix.leg }}-rep2
+          output-file: mpas-timers-${{ matrix.leg }}-rep2.json
+
+      - name: Run MPAS-A (rep 3/3)
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ matrix.ranks }}'
+          resolution: ${{ inputs.resolution }}
+          run-duration: ${{ inputs.run-duration }}
+          run-timeout: ${{ inputs.run-timeout }}
+          mpi-impl: ${{ inputs.mpi }}
+          working-dir: run-perf-${{ matrix.leg }}-rep3
+          strict-exit-check: 'false'
+          mpi-run-flags: '-bind-to core'
+
+      - name: Parse MPAS timers (rep 3/3)
+        uses: ./.github/actions/parse-mpas-timers
+        with:
+          log-dir: run-perf-${{ matrix.leg }}-rep3
+          output-file: mpas-timers-${{ matrix.leg }}-rep3.json
+
+      - name: Average timer JSONs across 3 runs
+        shell: bash
+        run: |
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/average-perf-timers.py" \
+            "mpas-timers-${{ matrix.leg }}-rep1.json" \
+            "mpas-timers-${{ matrix.leg }}-rep2.json" \
+            "mpas-timers-${{ matrix.leg }}-rep3.json" \
+            "mpas-timers-${{ matrix.leg }}.json"
 
       - name: Upload timer JSON
         uses: actions/upload-artifact@v6
