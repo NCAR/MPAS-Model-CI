@@ -6482,6 +6482,7 @@ module atm_time_integration
 !
 !     horizontal pressure gradient
 !
+      call mpas_timer_start('atm_dyn_tend_work_6480')
       if(rk_step == 1) then
          !$acc parallel default(present) async(1)
          !$acc loop gang vector collapse(2) private(cell1, cell2)
@@ -6578,6 +6579,7 @@ module atm_time_integration
       !
 
       !$acc wait
+      call mpas_timer_stop('atm_dyn_tend_work_6480')
 
       if (rk_step == 1) then
 
