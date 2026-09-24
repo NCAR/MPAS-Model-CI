@@ -7,7 +7,7 @@ name: "BFB: Restart (2-day continuous vs 24h restart)"
 on:
   workflow_dispatch:
   push:
-    branches: [hackathon, 'hackathon/**', 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**']
+    branches: [hackathon, 'hackathon/**', 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**', 'feature-ci/restart-bfb']
   pull_request:
     branches: [master, develop, 'hotfix-*', 'hotfix/**']
 
