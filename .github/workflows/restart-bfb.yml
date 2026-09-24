@@ -1,0 +1,25 @@
+# BFB caller: restart continuity (2-day run vs restart from its 24h midpoint).
+# Add a shorter variant by copying this file with smaller durations
+# (see `_test-restart-bfb.yml`).
+
+name: "BFB: Restart (2-day continuous vs 24h restart)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [hackathon, 'hackathon/**', 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**']
+  pull_request:
+    branches: [master, develop, 'hotfix-*', 'hotfix/**']
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-restart-bfb.yml
+    with:
+      compiler: oneapi
+      mpi: mpich
+      precision: single
+      resolution: 240km
+      ranks: '4'
+      total-duration: '2_00:00:00'
+      restart-interval: '1_00:00:00'
+      run-timeout: '30'

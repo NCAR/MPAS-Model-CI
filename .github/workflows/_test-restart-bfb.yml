@@ -1,0 +1,405 @@
+# Reusable workflow: restart bit-for-bit test.
+#
+# Run A runs continuously, writing a restart at the midpoint and at the end.
+# Run B starts from the midpoint restart and runs to the same end time.
+# The two final restarts must be identical. Sequential jobs, unlike
+# _test-bfb.yml's independent parallel variants, since Run B depends on
+# Run A's output.
+
+name: _test-restart-bfb
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler family for the container image (gcc, nvhpc, oneapi)'
+        required: true
+        type: string
+      mpi:
+        description: 'MPI implementation for the container image (mpich, openmpi)'
+        required: true
+        type: string
+      resolution:
+        description: 'Test case resolution'
+        required: false
+        type: string
+        default: '240km'
+      precision:
+        description: 'Floating-point precision (single or double)'
+        required: false
+        type: string
+        default: 'single'
+      ranks:
+        description: 'MPI process count, used for both runs'
+        required: false
+        type: string
+        default: '4'
+      total-duration:
+        description: 'Length of the continuous Run A (D_HH:MM:SS)'
+        required: false
+        type: string
+        default: '2_00:00:00'
+      restart-interval:
+        description: 'When Run A writes its midpoint restart, and where Run B starts (D_HH:MM:SS)'
+        required: false
+        type: string
+        default: '1_00:00:00'
+      use-pio:
+        description: 'Use PIO library instead of SMIOL (true/false)'
+        required: false
+        type: string
+        default: 'false'
+      run-timeout:
+        description: 'Per-run timeout in minutes (applies to both Run A and Run B)'
+        required: false
+        type: string
+        default: '30'
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+          gpu: ''
+
+  build:
+    needs: config
+    name: Build
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          use-pio: ${{ inputs.use-pio }}
+          openacc: 'false'
+          precision: ${{ inputs.precision }}
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-restart-bfb
+          path: atmosphere_model
+          retention-days: 1
+
+  run-a:
+    needs: [config, build]
+    name: Run A (continuous)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    outputs:
+      start_time: ${{ steps.times.outputs.start_time }}
+      midpoint_time: ${{ steps.times.outputs.midpoint_time }}
+      midpoint_file_ts: ${{ steps.times.outputs.midpoint_file_ts }}
+      final_time: ${{ steps.times.outputs.final_time }}
+      final_file_ts: ${{ steps.times.outputs.final_file_ts }}
+      continuation_duration: ${{ steps.times.outputs.continuation_duration }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download test case
+        uses: ./.github/actions/download-testdata
+        with:
+          resolution: ${{ inputs.resolution }}
+          dest-dir: run-a
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-restart-bfb
+
+      - name: Compute restart timestamps
+        id: times
+        shell: bash
+        working-directory: run-a
+        run: |
+          set -euo pipefail
+
+          duration_to_seconds() {
+            local dur="$1" days=0 rest="$1" hh mm ss
+            if [[ "$dur" == *_* ]]; then
+              days="${dur%%_*}"
+              rest="${dur#*_}"
+            fi
+            IFS=: read -r hh mm ss <<< "$rest"
+            echo $(( 10#$days*86400 + 10#$hh*3600 + 10#$mm*60 + 10#$ss ))
+          }
+
+          seconds_to_duration() {
+            local total=$1 days hh mm ss rem
+            days=$(( total / 86400 )); rem=$(( total % 86400 ))
+            hh=$(( rem / 3600 )); rem=$(( rem % 3600 ))
+            mm=$(( rem / 60 )); ss=$(( rem % 60 ))
+            printf '%d_%02d:%02d:%02d' "$days" "$hh" "$mm" "$ss"
+          }
+
+          START_TIME=$(grep -oP "config_start_time\s*=\s*'\K[^']+" namelist.atmosphere)
+          START_EPOCH=$(date -u -d "${START_TIME/_/ }" +%s)
+
+          TOTAL_SEC=$(duration_to_seconds "${{ inputs.total-duration }}")
+          RESTART_SEC=$(duration_to_seconds "${{ inputs.restart-interval }}")
+          CONT_SEC=$(( TOTAL_SEC - RESTART_SEC ))
+          if [ "${CONT_SEC}" -le 0 ]; then
+            echo "::error::total-duration must be greater than restart-interval"
+            exit 1
+          fi
+
+          MID_EPOCH=$(( START_EPOCH + RESTART_SEC ))
+          FINAL_EPOCH=$(( START_EPOCH + TOTAL_SEC ))
+
+          MID_TIME=$(date -u -d "@${MID_EPOCH}" +'%Y-%m-%d_%H:%M:%S')
+          MID_FILE_TS=$(date -u -d "@${MID_EPOCH}" +'%Y-%m-%d_%H.%M.%S')
+          FINAL_TIME=$(date -u -d "@${FINAL_EPOCH}" +'%Y-%m-%d_%H:%M:%S')
+          FINAL_FILE_TS=$(date -u -d "@${FINAL_EPOCH}" +'%Y-%m-%d_%H.%M.%S')
+          CONT_DUR=$(seconds_to_duration "${CONT_SEC}")
+
+          echo "start_time=${START_TIME}" >> "$GITHUB_OUTPUT"
+          echo "midpoint_time=${MID_TIME}" >> "$GITHUB_OUTPUT"
+          echo "midpoint_file_ts=${MID_FILE_TS}" >> "$GITHUB_OUTPUT"
+          echo "final_time=${FINAL_TIME}" >> "$GITHUB_OUTPUT"
+          echo "final_file_ts=${FINAL_FILE_TS}" >> "$GITHUB_OUTPUT"
+          echo "continuation_duration=${CONT_DUR}" >> "$GITHUB_OUTPUT"
+
+          echo "=== Restart BFB timeline ==="
+          echo "  Start:      ${START_TIME}"
+          echo "  Midpoint:   ${MID_TIME}  (restart file: restart.${MID_FILE_TS}.nc)"
+          echo "  Final:      ${FINAL_TIME}  (restart file: restart.${FINAL_FILE_TS}.nc)"
+          echo "  Run A duration:    ${{ inputs.total-duration }}"
+          echo "  Run B duration:    ${CONT_DUR}"
+
+      - name: Configure namelist and streams
+        shell: bash
+        working-directory: run-a
+        run: |
+          set -euo pipefail
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${{ inputs.total-duration }}'/" namelist.atmosphere
+          sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${{ inputs.restart-interval }}"'"/' streams.atmosphere
+          echo "=== namelist.atmosphere (&restart, run_duration) ==="
+          grep -E "config_run_duration|config_start_time|config_do_restart" namelist.atmosphere
+          echo "=== streams.atmosphere (restart stream) ==="
+          grep -A2 '<immutable_stream name="restart"' streams.atmosphere
+
+      - name: Link executable
+        shell: bash
+        working-directory: run-a
+        run: |
+          chmod +x ../atmosphere_model
+          ln -sf $(realpath ../atmosphere_model) atmosphere_model
+
+      - name: Run MPAS-A (Run A, continuous)
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ inputs.ranks }}'
+          resolution: ${{ inputs.resolution }}
+          mpi-impl: ${{ inputs.mpi }}
+          run-timeout: ${{ inputs.run-timeout }}
+          working-dir: run-a
+          strict-exit-check: 'false'
+
+      - name: Verify restart files were written
+        shell: bash
+        working-directory: run-a
+        run: |
+          set -euo pipefail
+          for f in "restart.${{ steps.times.outputs.midpoint_file_ts }}.nc" "restart.${{ steps.times.outputs.final_file_ts }}.nc"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::expected restart file $f was not written"
+              ls -la restart.*.nc 2>/dev/null || echo "no restart files found"
+              exit 1
+            fi
+          done
+
+      - name: Upload restart files
+        uses: actions/upload-artifact@v6
+        with:
+          name: restart-run-a
+          path: |
+            run-a/restart.${{ steps.times.outputs.midpoint_file_ts }}.nc
+            run-a/restart.${{ steps.times.outputs.final_file_ts }}.nc
+          retention-days: 1
+
+  run-b:
+    needs: [config, build, run-a]
+    name: Run B (restarted)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download test case
+        uses: ./.github/actions/download-testdata
+        with:
+          resolution: ${{ inputs.resolution }}
+          dest-dir: run-b
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-restart-bfb
+
+      - name: Download Run A's midpoint restart
+        uses: actions/download-artifact@v7
+        with:
+          name: restart-run-a
+          path: restart-run-a
+
+      - name: Seed restart file
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "restart-run-a/run-a/restart.${{ needs.run-a.outputs.midpoint_file_ts }}.nc" \
+             "run-b/restart.${{ needs.run-a.outputs.midpoint_file_ts }}.nc"
+
+      - name: Configure namelist and streams for restart
+        shell: bash
+        working-directory: run-b
+        run: |
+          set -euo pipefail
+          sed -i "s/config_do_restart = .*/config_do_restart = true/" namelist.atmosphere
+          sed -i "s/config_start_time = '[^']*'/config_start_time = '${{ needs.run-a.outputs.midpoint_time }}'/" namelist.atmosphere
+          sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${{ needs.run-a.outputs.continuation_duration }}'/" namelist.atmosphere
+          sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="'"${{ needs.run-a.outputs.continuation_duration }}"'"/' streams.atmosphere
+          echo "=== namelist.atmosphere (&restart, run_duration, start_time) ==="
+          grep -E "config_run_duration|config_start_time|config_do_restart" namelist.atmosphere
+
+      - name: Link executable
+        shell: bash
+        working-directory: run-b
+        run: |
+          chmod +x ../atmosphere_model
+          ln -sf $(realpath ../atmosphere_model) atmosphere_model
+
+      - name: Run MPAS-A (Run B, restarted)
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ inputs.ranks }}'
+          resolution: ${{ inputs.resolution }}
+          mpi-impl: ${{ inputs.mpi }}
+          run-timeout: ${{ inputs.run-timeout }}
+          working-dir: run-b
+          strict-exit-check: 'false'
+
+      - name: Verify final restart file was written
+        shell: bash
+        working-directory: run-b
+        run: |
+          set -euo pipefail
+          f="restart.${{ needs.run-a.outputs.final_file_ts }}.nc"
+          if [ ! -f "$f" ]; then
+            echo "::error::expected restart file $f was not written"
+            ls -la restart.*.nc 2>/dev/null || echo "no restart files found"
+            exit 1
+          fi
+
+      - name: Upload final restart file
+        uses: actions/upload-artifact@v6
+        with:
+          name: restart-run-b
+          path: run-b/restart.${{ needs.run-a.outputs.final_file_ts }}.nc
+          retention-days: 1
+
+  compare:
+    needs: [run-a, run-b]
+    if: ${{ !cancelled() && needs.run-a.result == 'success' && needs.run-b.result == 'success' }}
+    name: Compare Restart Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - name: Download Run A restart files
+        uses: actions/download-artifact@v7
+        with:
+          name: restart-run-a
+          path: restart-a
+
+      - name: Download Run B restart file
+        uses: actions/download-artifact@v7
+        with:
+          name: restart-run-b
+          path: restart-b
+
+      - name: Compare final restart files
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install --quiet netCDF4 numpy
+
+          FINAL_TS="${{ needs.run-a.outputs.final_file_ts }}"
+          REF_FILE=$(find restart-a -name "restart.${FINAL_TS}.nc")
+          TEST_FILE=$(find restart-b -name "restart.${FINAL_TS}.nc")
+
+          echo "## Restart BFB Comparison" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run A (continuous) final restart: \`restart.${FINAL_TS}.nc\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run B (restarted from \`restart.${{ needs.run-a.outputs.midpoint_file_ts }}.nc\`) final restart: \`restart.${FINAL_TS}.nc\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${REF_FILE}" ] || [ -z "${TEST_FILE}" ]; then
+            echo "::error::could not find both restart files to compare"
+            find restart-a restart-b -type f
+            exit 1
+          fi
+
+          if cmp -s "${REF_FILE}" "${TEST_FILE}"; then
+            echo "Result: byte-identical" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          set +e
+          RESULT=$(python3 "${GITHUB_WORKSPACE}/.github/scripts/compare-bfb-nc.py" "${REF_FILE}" "${TEST_FILE}")
+          STATUS=$?
+          set -e
+          IFS=$'\t' read -r CODE DETAIL <<< "${RESULT}"
+
+          if [ "${STATUS}" -eq 0 ] && [ "${CODE}" = "OK" ]; then
+            echo ":white_check_mark: data-identical (${DETAIL})" >> "$GITHUB_STEP_SUMMARY"
+            echo "Result: data-identical (${DETAIL})"
+          else
+            echo ":x: DIFFER — ${DETAIL}" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Restart BFB comparison failed: ${DETAIL}"
+            exit 1
+          fi
+
+  cleanup:
+    needs: [run-a, run-b, compare]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Cleanup
+    steps:
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-restart-bfb") or startswith("restart-run-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true
