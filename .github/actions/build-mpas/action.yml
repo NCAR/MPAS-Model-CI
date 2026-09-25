@@ -47,14 +47,22 @@ runs:
 
         # MPAS Makefile uses `cpp` for Registry preprocessing.
         # Some containers (e.g. openSUSE Leap) don't ship it separately.
-        if ! command -v cpp &>/dev/null; then
-          echo "cpp not found, installing..."
+        # SCOTCH builds need bison and flex
+        missing=()
+        for tool in cpp bison flex; do
+          command -v "$tool" &>/dev/null || missing+=("$tool")
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+          echo "Missing tools: ${missing[*]}, installing..."
           if command -v zypper &>/dev/null; then
-            zypper install -y --no-recommends cpp
+            zypper install -y --no-recommends "${missing[@]}"
           elif command -v dnf &>/dev/null; then
-            dnf install -y cpp
+            dnf install -y "${missing[@]}"
           elif command -v apt-get &>/dev/null; then
-            apt-get update && apt-get install -y cpp
+            apt-get update && apt-get install -y "${missing[@]}"
+          else
+            echo "::error::No supported package manager found to install ${missing[*]}"
+            exit 1
           fi
         fi
         
