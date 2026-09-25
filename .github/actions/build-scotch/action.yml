@@ -1,0 +1,66 @@
+name: 'Build PT-SCOTCH'
+description: 'Build and cache a static PT-SCOTCH install for linking with MPAS (sets SCOTCH env var / output)'
+
+inputs:
+  compiler:
+    description: 'Compiler family (used only for the cache key)'
+    required: true
+  mpi:
+    description: 'MPI implementation (used only for the cache key)'
+    required: true
+
+outputs:
+  scotch-root:
+    description: 'Path to the PT-SCOTCH install (export as SCOTCH before building MPAS)'
+    value: ${{ steps.paths.outputs.scotch-root }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve PT-SCOTCH version and prefix
+      id: paths
+      shell: bash
+      run: |
+        CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
+        if [ ! -f "${CI_CONFIG}" ]; then
+          echo "::error::ci-config.env not found at ${CI_CONFIG}"
+          exit 1
+        fi
+        source "${CI_CONFIG}"
+
+        if [ -z "${SCOTCH_VERSION:-}" ]; then
+          echo "::error::SCOTCH_VERSION not set in ci-config.env"
+          exit 1
+        fi
+
+        SCOTCH_ROOT="${GITHUB_WORKSPACE}/.cache/ptscotch-${SCOTCH_VERSION}"
+        echo "scotch-version=${SCOTCH_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "scotch-root=${SCOTCH_ROOT}" >> "$GITHUB_OUTPUT"
+
+    - name: Cache PT-SCOTCH install
+      id: cache-scotch
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      with:
+        path: ${{ steps.paths.outputs.scotch-root }}
+        key: ptscotch-${{ steps.paths.outputs.scotch-version }}-${{ inputs.compiler }}-${{ inputs.mpi }}-${{ runner.arch }}-${{ hashFiles('.github/scripts/install-ptscotch.sh') }}
+
+    - name: Build PT-SCOTCH
+      if: steps.cache-scotch.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        SCOTCH_VERSION: ${{ steps.paths.outputs.scotch-version }}
+        SCOTCH_PREFIX: ${{ steps.paths.outputs.scotch-root }}
+      run: |
+        chmod +x .github/scripts/install-ptscotch.sh
+        .github/scripts/install-ptscotch.sh
+
+    - name: Verify PT-SCOTCH install
+      shell: bash
+      run: |
+        SCOTCH_ROOT="${{ steps.paths.outputs.scotch-root }}"
+        if [ ! -f "${SCOTCH_ROOT}/include/ptscotch.h" ] || [ ! -f "${SCOTCH_ROOT}/lib64/libptscotch.a" ]; then
+          echo "::error::PT-SCOTCH install at ${SCOTCH_ROOT} is missing expected headers/libs (cache-hit=${{ steps.cache-scotch.outputs.cache-hit }})."
+          find "${SCOTCH_ROOT}" -maxdepth 3 2>/dev/null || true
+          exit 1
+        fi
+        echo "PT-SCOTCH ready at ${SCOTCH_ROOT}"
