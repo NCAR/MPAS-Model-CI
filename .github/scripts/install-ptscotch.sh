@@ -71,7 +71,6 @@ cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" \
   -DCMAKE_C_COMPILER="$(command -v mpicc)" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="${SCOTCH_PREFIX}" \
-  -DCMAKE_INSTALL_LIBDIR=lib64 \
   -DBUILD_SHARED_LIBS=OFF \
   -DBUILD_PTSCOTCH=ON
 
@@ -79,9 +78,9 @@ echo "=== Building PT-SCOTCH ==="
 cmake --build "${BUILD_DIR}" --parallel "$(nproc)"
 
 echo "=== Installing PT-SCOTCH to ${SCOTCH_PREFIX} ==="
-cmake --install "${BUILD_DIR}" --prefix "${SCOTCH_PREFIX}"
+cmake --install "${BUILD_DIR}"
 
-if [ ! -f "${SCOTCH_PREFIX}/include/ptscotch.h" ] || [ ! -f "${SCOTCH_PREFIX}/lib64/libptscotch.a" ]; then
+if [ ! -f "${SCOTCH_PREFIX}/include/ptscotch.h" ] || [ ! -f "${SCOTCH_PREFIX}/lib/libptscotch.a" ]; then
   echo "::error::PT-SCOTCH install at ${SCOTCH_PREFIX} is missing expected headers/libs."
   find "${SCOTCH_PREFIX}" -maxdepth 3
   exit 1
