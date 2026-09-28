@@ -79,7 +79,7 @@ echo "=== Building PT-SCOTCH ==="
 cmake --build "${BUILD_DIR}" --parallel "$(nproc)"
 
 echo "=== Installing PT-SCOTCH to ${SCOTCH_PREFIX} ==="
-cmake --install "${BUILD_DIR}"
+cmake --install "${BUILD_DIR}" --prefix "${SCOTCH_PREFIX}"
 
 if [ ! -f "${SCOTCH_PREFIX}/include/ptscotch.h" ] || [ ! -f "${SCOTCH_PREFIX}/lib64/libptscotch.a" ]; then
   echo "::error::PT-SCOTCH install at ${SCOTCH_PREFIX} is missing expected headers/libs."
