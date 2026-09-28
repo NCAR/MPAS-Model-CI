@@ -26,19 +26,25 @@ if [ -f "${SCOTCH_PREFIX}/include/ptscotch.h" ] && [ -f "${SCOTCH_PREFIX}/lib64/
   exit 0
 fi
 
-echo "=== Installing build dependencies (cmake) ==="
-if ! command -v cmake &>/dev/null; then
-  if command -v dnf &>/dev/null; then
-    dnf install -y cmake
-  elif command -v zypper &>/dev/null; then
-    zypper install -y --no-recommends cmake
+# SCOTCH builds needs cmake, bison and flex
+missing=()
+for tool in cmake bison flex; do
+  command -v "$tool" &>/dev/null || missing+=("$tool")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  echo "Missing tools: ${missing[*]}, installing..."
+  if command -v zypper &>/dev/null; then
+    zypper install -y --no-recommends "${missing[@]}"
+  elif command -v dnf &>/dev/null; then
+    dnf install -y "${missing[@]}"
   elif command -v apt-get &>/dev/null; then
-    apt-get update && apt-get install -y cmake
+    apt-get update && apt-get install -y "${missing[@]}"
   else
-    echo "::error::No supported package manager found to install cmake."
+    echo "::error::No supported package manager found to install ${missing[*]}"
     exit 1
   fi
 fi
+
 cmake --version
 
 if ! command -v mpicc &>/dev/null; then
