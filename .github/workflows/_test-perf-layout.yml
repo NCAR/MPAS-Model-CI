@@ -1,0 +1,331 @@
+# Reusable workflow: rank x thread layout sweep for OpenACC and OpenMP+OpenACC.
+#
+# Builds MPAS-A with and without OpenMP, runs each requested layout (build, MPI
+# ranks, OpenMP threads per rank), and ranks layouts by the "time integration"
+# timer. Measures wall-clock time only; correctness is tested separately.
+#
+# Security: self-hosted runners. Callers must use workflow_dispatch only.
+
+name: _test-perf-layout
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_call:
+    inputs:
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: true
+        type: string
+      precision:
+        description: 'Floating-point precision (single or double)'
+        required: false
+        type: string
+        default: 'single'
+      resolution:
+        description: 'Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)'
+        required: false
+        type: string
+        default: '120km'
+      run-duration:
+        description: 'config_run_duration override (D_HH:MM:SS)'
+        required: false
+        type: string
+        default: '0_00:12:00'
+      layouts:
+        description: >
+          JSON array of layouts. Each: build ("acc" or "omp-acc"), ranks, threads.
+          acc layouts must use threads = 1.
+        required: true
+        type: string
+      run-timeout:
+        description: 'Run step timeout in minutes'
+        required: false
+        type: string
+        default: '30'
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image-gpu: ${{ steps.gpu-container.outputs.image }}
+      build-matrix: ${{ steps.matrix.outputs.build-matrix }}
+      run-matrix: ${{ steps.matrix.outputs.run-matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/resolve-container
+        id: gpu-container
+        with:
+          compiler: nvhpc
+          mpi: ${{ inputs.mpi }}
+          gpu: cuda
+
+      - name: Build matrices
+        id: matrix
+        shell: bash
+        env:
+          LAYOUTS_JSON: ${{ inputs.layouts }}
+        run: |
+          set -euo pipefail
+          echo "${LAYOUTS_JSON}" | jq -e '
+            type == "array" and length >= 1
+            and all(.[]; (.build == "acc" or .build == "omp-acc")
+                         and (.ranks | type == "number" and . >= 1)
+                         and (.threads | type == "number" and . >= 1))
+            and all(.[]; .build == "omp-acc" or .threads == 1)' >/dev/null \
+            || { echo "::error::layouts must be a JSON array of {build: acc|omp-acc, ranks >= 1, threads >= 1}; acc needs threads = 1"; exit 1; }
+
+          BUILD_MATRIX=$(echo "${LAYOUTS_JSON}" | jq -c \
+            '[.[].build] | unique | map({leg: ., openmp: (. == "omp-acc")})')
+          RUN_MATRIX=$(echo "${LAYOUTS_JSON}" | jq -c \
+            'map(. + {id: "\(.build)-r\(.ranks)-t\(.threads)"})')
+
+          echo "build-matrix=${BUILD_MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "run-matrix=${RUN_MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "Build matrix: ${BUILD_MATRIX}"
+          echo "Run matrix: ${RUN_MATRIX}"
+
+  build:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.build-matrix) }}
+    name: Build (${{ matrix.leg }})
+    runs-on:
+      group: CIRRUS-32x256-A10
+    container:
+      image: ${{ needs.config.outputs.image-gpu }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - name: Build MPAS-A (${{ inputs.precision }}, OpenACC${{ matrix.openmp && ' + OpenMP' || '' }})
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: nvhpc
+          use-pio: 'false'
+          openacc: 'true'
+          openmp: ${{ matrix.openmp && 'true' || 'false' }}
+          precision: ${{ inputs.precision }}
+          build-timeout: '45'
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: exe-layout-${{ matrix.leg }}-${{ inputs.mpi }}
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: [config, build]
+    if: ${{ needs.build.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.run-matrix) }}
+    name: Run (${{ matrix.id }})
+    runs-on:
+      group: CIRRUS-32x256-A10
+    container:
+      image: ${{ needs.config.outputs.image-gpu }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check GPU availability
+        shell: bash
+        run: nvidia-smi || echo "::warning::nvidia-smi failed"
+
+      - name: Download executable
+        uses: actions/download-artifact@v7
+        with:
+          name: exe-layout-${{ matrix.build }}-${{ inputs.mpi }}
+
+      - name: Resolve core binding
+        id: bind
+        shell: bash
+        run: |
+          RANKS=${{ matrix.ranks }}
+          THREADS=${{ matrix.threads }}
+          CORES=$(lscpu -p=CORE,SOCKET 2>/dev/null | grep -v '^#' | sort -u | wc -l)
+          echo "Layout: ${RANKS} rank(s) x ${THREADS} thread(s); physical cores: ${CORES}; nproc: $(nproc)"
+          if [ "${CORES}" -gt 0 ] && [ $((RANKS * THREADS)) -gt "${CORES}" ]; then
+            echo "::warning::Layout needs $((RANKS * THREADS)) cores but only ${CORES} are available; timings will be oversubscribed"
+          fi
+          # Give each rank its own block of `threads` cores.
+          if [ "${{ inputs.mpi }}" = "openmpi" ]; then
+            FLAGS="--map-by slot:PE=${THREADS} --bind-to core"
+          else
+            FLAGS="-bind-to core:${THREADS}"
+          fi
+          echo "flags=${FLAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Run MPAS-A
+        uses: ./.github/actions/run-mpas
+        env:
+          OMP_NUM_THREADS: ${{ matrix.threads }}
+          OMP_PROC_BIND: close
+          OMP_PLACES: cores
+          OMP_STACKSIZE: 512M
+          # Prints where each thread landed, to confirm layouts do not overlap.
+          OMP_DISPLAY_AFFINITY: 'TRUE'
+        with:
+          executable: ./atmosphere_model
+          num-procs: '${{ matrix.ranks }}'
+          resolution: ${{ inputs.resolution }}
+          run-duration: ${{ inputs.run-duration }}
+          run-timeout: ${{ inputs.run-timeout }}
+          mpi-impl: ${{ inputs.mpi }}
+          working-dir: run-layout-${{ matrix.id }}
+          strict-exit-check: 'false'
+          mpi-run-flags: ${{ steps.bind.outputs.flags }}
+
+      - name: Verify OpenMP build and thread count
+        if: ${{ matrix.build == 'omp-acc' }}
+        shell: bash
+        run: |
+          LOG="run-layout-${{ matrix.id }}/log.atmosphere.0000.out"
+          grep -E "OpenMP support|OpenMP max threads|MPI task count" "${LOG}" || true
+          grep -q "OpenMP support: yes" "${LOG}" \
+            || { echo "::error::Model was not built with OpenMP"; exit 1; }
+          grep -q -E "OpenMP max threads: ${{ matrix.threads }}[[:space:]]*\$" "${LOG}" \
+            || { echo "::error::Expected ${{ matrix.threads }} OpenMP thread(s)"; exit 1; }
+
+      - name: Parse MPAS timers
+        uses: ./.github/actions/parse-mpas-timers
+        with:
+          log-dir: run-layout-${{ matrix.id }}
+          output-file: mpas-timers-${{ matrix.id }}.json
+
+      - name: Upload timer JSON
+        uses: actions/upload-artifact@v6
+        with:
+          name: layout-timers-${{ matrix.id }}
+          path: mpas-timers-${{ matrix.id }}.json
+          retention-days: 1
+
+  summarize:
+    needs: [config, run]
+    if: ${{ !cancelled() && needs.run.result != 'skipped' }}
+    name: Summarize Layouts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+
+      - name: Download timer JSON
+        uses: actions/download-artifact@v7
+        with:
+          pattern: layout-timers-*
+          path: layout-timers
+          merge-multiple: true
+
+      - name: Summarize
+        env:
+          RUN_MATRIX: ${{ needs.config.outputs.run-matrix }}
+          RESOLUTION: ${{ inputs.resolution }}
+          RUN_DURATION: ${{ inputs.run-duration }}
+          PRECISION: ${{ inputs.precision }}
+          MPI: ${{ inputs.mpi }}
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+
+          layouts = json.loads(os.environ["RUN_MATRIX"])
+          PREFERRED = ["time integration", "total time"]
+
+          results = []
+          for lay in layouts:
+              path = f"layout-timers/mpas-timers-{lay['id']}.json"
+              if not os.path.exists(path):
+                  results.append({**lay, "timers": None})
+                  continue
+              with open(path) as f:
+                  rows = json.load(f)["timers"]
+              results.append({**lay, "timers": {r["name"]: r for r in rows}})
+
+          ok = [r for r in results if r["timers"]]
+          metric = next((n for n in PREFERRED if all(n in r["timers"] for r in ok)), None)
+          if metric is None and ok:
+              metric = max(ok[0]["timers"].values(), key=lambda r: r["total_s"])["name"]
+
+          for r in ok:
+              r["t"] = r["timers"][metric]["total_s"] if metric in r["timers"] else None
+          ok = [r for r in ok if r["t"]]
+          ok.sort(key=lambda r: r["t"])
+
+          def best(build=None):
+              c = [r for r in ok if build is None or r["build"] == build]
+              return c[0] if c else None
+
+          best_all, best_acc, best_omp = best(), best("acc"), best("omp-acc")
+
+          print("## Layout sweep: OpenACC vs OpenMP+OpenACC")
+          print()
+          print(f"nvhpc/{os.environ['MPI']}, {os.environ['PRECISION']} precision, "
+                f"{os.environ['RESOLUTION']}, {os.environ['RUN_DURATION']}. "
+                f"Metric: `{metric}` total seconds (rank 0). Lower is better.")
+          print()
+          if best_all:
+              print(f"**Fastest layout: `{best_all['id']}`** "
+                    f"({best_all['ranks']} rank(s) x {best_all['threads']} thread(s), {best_all['t']:.3f} s)")
+          if best_acc and best_omp:
+              print(f"**Best OpenMP+OpenACC vs best OpenACC-only:** "
+                    f"{best_acc['t'] / best_omp['t']:.2f}x "
+                    f"(`{best_omp['id']}` vs `{best_acc['id']}`)")
+          print()
+          print("| Layout | Build | Ranks | Threads | Cores | " + (metric or "time") +
+                " (s) | vs best OpenACC-only |")
+          print("|---|---|---:|---:|---:|---:|---:|")
+          for r in ok:
+              rel = f"{best_acc['t'] / r['t']:.2f}\u00d7" if best_acc else "\u2014"
+              star = " **\u2190 fastest**" if r is best_all else ""
+              print(f"| `{r['id']}`{star} | {r['build']} | {r['ranks']} | {r['threads']} | "
+                    f"{r['ranks'] * r['threads']} | {r['t']:.3f} | {rel} |")
+          ok_ids = {r["id"] for r in ok}
+          for r in results:
+              if r["id"] not in ok_ids:
+                  print(f"| `{r['id']}` | {r['build']} | {r['ranks']} | {r['threads']} | "
+                        f"{r['ranks'] * r['threads']} | failed | \u2014 |")
+
+          if best_all and best_acc and best_all is not best_acc:
+              print()
+              print(f"### Top timers: `{best_all['id']}` vs `{best_acc['id']}`")
+              print()
+              print("| Timer | OpenACC-only (s) | Fastest (s) | Speedup |")
+              print("|---|---:|---:|---:|")
+              rows = sorted(best_acc["timers"].values(), key=lambda r: r["total_s"], reverse=True)[:15]
+              for row in rows:
+                  o = best_all["timers"].get(row["name"])
+                  if o and o["total_s"] > 0:
+                      print(f"| `{row['name']}` | {row['total_s']:.3f} | {o['total_s']:.3f} | "
+                            f"{row['total_s'] / o['total_s']:.2f}\u00d7 |")
+          PY
+
+  cleanup:
+    needs: [run, summarize]
+    if: always()
+    name: Cleanup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete temporary artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts \
+            --paginate --jq '.artifacts[] | select(.name | startswith("exe-layout-") or startswith("layout-timers-")) | .id' \
+          | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id || true
+            done || true

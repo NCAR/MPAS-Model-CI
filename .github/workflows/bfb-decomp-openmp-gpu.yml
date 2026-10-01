@@ -1,8 +1,7 @@
-# STUB: Registered on the default branch so `workflow_dispatch` works before the
-# full workflow merges from feature-ci/omp-acc. Replace with the real file when merging.
-
-permissions:
-  contents: read
+# BFB: OpenMP + OpenACC build (NVHPC). Reference is 1 rank x 1 thread; compared against
+# 4 ranks x 1 thread (decomposition) and 1 rank x 4 threads (threading, including
+# concurrent OpenACC kernel launches from several host threads).
+# CIRRUS self-hosted runners -- workflow_dispatch only (see _test-gpu.yml).
 
 name: "BFB: OpenMP+OpenACC (ranks and threads)"
 
@@ -10,9 +9,15 @@ on:
   workflow_dispatch:
 
 jobs:
-  stub:
-    name: Stub (placeholder)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Placeholder
-        run: echo "Stub only -- the full workflow runs from feature-ci/omp-acc."
+  test:
+    uses: ./.github/workflows/_test-bfb.yml
+    with:
+      compiler: nvhpc
+      mpi: mpich
+      gpu: 'true'
+      precision: single
+      run-timeout: '20'
+      variants: >-
+        [{"id":"r1","ranks":1,"openmp":true,"omp_threads":1,"label":"OpenMP+OpenACC, 1 rank"},
+         {"id":"r4","ranks":4,"openmp":true,"omp_threads":1,"label":"OpenMP+OpenACC, 4 ranks"},
+         {"id":"r1-t4","ranks":1,"openmp":true,"omp_threads":4,"label":"OpenMP+OpenACC, 1 rank, 4 threads"}]

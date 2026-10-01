@@ -13,6 +13,10 @@ inputs:
     description: 'Enable OpenACC (true/false)'
     required: false
     default: 'false'
+  openmp:
+    description: 'Enable OpenMP threading (true/false)'
+    required: false
+    default: 'false'
   precision:
     description: 'Floating-point precision (single or double)'
     required: false
@@ -80,6 +84,11 @@ runs:
           export OPENACC=true
         fi
         
+        # Set up OpenMP threading
+        if [ "${{ inputs.openmp }}" = "true" ]; then
+          export OPENMP=true
+        fi
+
         echo "Build configuration:"
         echo "  Compiler input: ${{ inputs.compiler }}"
         echo "  COMPILER_FAMILY: ${COMPILER_FAMILY}"
@@ -87,6 +96,7 @@ runs:
         echo "  PNETCDF: ${PNETCDF:-not set}"
         echo "  USE_PIO2: ${USE_PIO2}"
         echo "  OPENACC: ${OPENACC:-false}"
+        echo "  OPENMP: ${OPENMP:-false}"
         echo "  PRECISION: ${{ inputs.precision }}"
         
         # Settings from .github/ci-config.env — edit that file to change targets/workarounds

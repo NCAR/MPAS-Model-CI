@@ -8,6 +8,10 @@
 # Alternatively set `gpu: 'false'` and add per-variant `"openacc": true|false` to mix
 # CPU (GitHub-hosted) and GPU (CIRRUS) NVHPC builds in one comparison.
 #
+# Variants may also set `openmp` (build with OpenMP) and `omp_threads` (OMP_NUM_THREADS
+# at run time, default 1). For openmp variants the run checks the model log for
+# "OpenMP support: yes" and the expected "OpenMP max threads".
+#
 # MPI rank count and PIO vs SMIOL are common dimensions but not special — add any
 # new scenario by appending another variant object (and a small caller workflow).
 
@@ -32,7 +36,8 @@ on:
         description: >
           JSON array of at least two variant objects. Required per variant: id (unique slug),
           ranks (MPI processes). Optional: use_pio (default false), openacc (default follows gpu input),
-          label (summary text), resolution, run_duration (override workflow defaults for that variant only).
+          openmp (default false), omp_threads (default 1), label (summary text), resolution, run_duration
+          (override workflow defaults for that variant only).
         required: true
         type: string
       resolution:
@@ -159,20 +164,22 @@ jobs:
           fi
 
           MIXED=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
-            '([.[] | (.openacc // $gdef)] | unique | length) > 1')
+            '([.[] | [(.openacc // $gdef), (.openmp // false)]] | unique | length) > 1')
 
           BUILD_MATRIX=$(echo "${VARIANTS_JSON}" | jq -c --argjson gdef "${GDEF_JSON}" \
             --argjson mixed "${MIXED}" --arg cpuimg "${CPU_IMG}" --arg cudaimg "${CUDA_IMG}" '
             [.[] | {
               build_tag: (if (.use_pio // false) then "pio" else "smiol" end),
-              openacc: (.openacc // $gdef)
+              openacc: (.openacc // $gdef),
+              openmp: (.openmp // false)
             }]
-            | unique_by("\(.build_tag)-\(.openacc)")
+            | unique_by("\(.build_tag)-\(.openacc)-\(.openmp)")
             | map(. + {
                 image: (if .openacc then $cudaimg else $cpuimg end),
                 artifact_name: (
                   if $mixed then
-                    ("exe-bfb-" + .build_tag + "-" + (if .openacc then "openacc" else "cpu" end))
+                    ("exe-bfb-" + .build_tag + "-" + (if .openacc then "openacc" else "cpu" end)
+                      + (if .openmp then "-omp" else "" end))
                   else
                     ("exe-bfb-" + .build_tag)
                   end
@@ -186,10 +193,13 @@ jobs:
             '[.[] |
               (if (.use_pio // false) then "pio" else "smiol" end) as $bt |
               (.openacc // $gdef) as $oa |
+              (.openmp // false) as $om |
               {
                 id,
                 build_tag: $bt,
                 openacc: $oa,
+                openmp: $om,
+                omp_threads: ((.omp_threads // 1) | tonumber),
                 ranks: (.ranks | tonumber),
                 resolution: (.resolution // $defres),
                 run_duration: (.run_duration // $defdur),
@@ -197,7 +207,8 @@ jobs:
                 image: (if $oa then $cudaimg else $cpuimg end),
                 artifact_name: (
                   if $mixed then
-                    ("exe-bfb-" + $bt + "-" + (if $oa then "openacc" else "cpu" end))
+                    ("exe-bfb-" + $bt + "-" + (if $oa then "openacc" else "cpu" end)
+                      + (if $om then "-omp" else "" end))
                   else
                     ("exe-bfb-" + $bt)
                   end
@@ -217,7 +228,7 @@ jobs:
       fail-fast: true
       matrix:
         include: ${{ fromJSON(needs.config.outputs.build_matrix) }}
-    name: Build (${{ matrix.build_tag }}, ${{ matrix.openacc && 'openacc' || 'cpu' }})
+    name: Build (${{ matrix.build_tag }}, ${{ matrix.openacc && 'openacc' || 'cpu' }}${{ matrix.openmp && ', openmp' || '' }})
     runs-on: ${{ matrix.openacc && fromJSON('{"group":"CIRRUS-4x8-gpu"}') || 'ubuntu-latest' }}
     container:
       image: ${{ matrix.image }}
@@ -232,6 +243,7 @@ jobs:
           compiler: ${{ inputs.compiler }}
           use-pio: ${{ matrix.build_tag == 'pio' && 'true' || 'false' }}
           openacc: ${{ matrix.openacc && 'true' || 'false' }}
+          openmp: ${{ matrix.openmp && 'true' || 'false' }}
           precision: ${{ inputs.precision }}
 
       - name: Upload executable
@@ -267,6 +279,8 @@ jobs:
 
       - name: Run MPAS-A
         uses: ./.github/actions/run-mpas
+        env:
+          OMP_NUM_THREADS: ${{ matrix.omp_threads }}
         with:
           executable: ./atmosphere_model
           num-procs: '${{ matrix.ranks }}'
@@ -276,6 +290,17 @@ jobs:
           mpi-impl: ${{ inputs.mpi }}
           working-dir: run-${{ matrix.id }}
           strict-exit-check: 'false'
+
+      - name: Verify OpenMP build and thread count
+        if: ${{ matrix.openmp }}
+        shell: bash
+        run: |
+          LOG="run-${{ matrix.id }}/log.atmosphere.0000.out"
+          grep -E "OpenMP support|OpenMP max threads" "${LOG}" || true
+          grep -q "OpenMP support: yes" "${LOG}" \
+            || { echo "::error::Model was not built with OpenMP"; exit 1; }
+          grep -q -E "OpenMP max threads: ${{ matrix.omp_threads }}[[:space:]]*\$" "${LOG}" \
+            || { echo "::error::Expected ${{ matrix.omp_threads }} OpenMP thread(s)"; exit 1; }
 
       - name: Upload history output
         uses: actions/upload-artifact@v6
