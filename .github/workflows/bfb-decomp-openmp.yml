@@ -1,0 +1,18 @@
+# STUB: Registered on the default branch so `workflow_dispatch` works before the
+# full workflow merges from feature-ci/omp-acc. Replace with the real file when merging.
+
+permissions:
+  contents: read
+
+name: "BFB: OpenMP (ranks and threads)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  stub:
+    name: Stub (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "Stub only -- the full workflow runs from feature-ci/omp-acc."

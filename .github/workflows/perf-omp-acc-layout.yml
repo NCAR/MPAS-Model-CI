@@ -1,0 +1,59 @@
+# STUB: Registered on the default branch so `workflow_dispatch` works before the
+# full workflow merges from feature-ci/omp-acc. Replace with the real file when merging.
+
+permissions:
+  contents: read
+
+name: "Perf: OpenMP+OpenACC layout sweep (NVHPC)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpi:
+        description: MPI implementation
+        required: true
+        default: mpich
+        type: choice
+        options:
+          - mpich
+          - openmpi
+      precision:
+        description: Floating-point precision
+        required: false
+        default: single
+        type: choice
+        options:
+          - single
+          - double
+      resolution:
+        description: Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)
+        required: false
+        default: '120km'
+        type: string
+      run_duration:
+        description: config_run_duration (D_HH:MM:SS)
+        required: false
+        default: '0_00:12:00'
+        type: string
+      layouts:
+        description: >
+          JSON array of {build: acc|omp-acc, ranks, threads}. Keep ranks x threads
+          <= physical cores on the runner.
+        required: false
+        default: >-
+          [{"build":"acc","ranks":1,"threads":1},
+           {"build":"acc","ranks":4,"threads":1},
+           {"build":"acc","ranks":8,"threads":1},
+           {"build":"omp-acc","ranks":1,"threads":32},
+           {"build":"omp-acc","ranks":2,"threads":16},
+           {"build":"omp-acc","ranks":4,"threads":8},
+           {"build":"omp-acc","ranks":8,"threads":4}]
+        type: string
+
+jobs:
+  stub:
+    name: Stub (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "Stub only -- the full workflow runs from feature-ci/omp-acc."
