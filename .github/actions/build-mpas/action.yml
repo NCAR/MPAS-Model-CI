@@ -25,6 +25,14 @@ inputs:
     description: 'Build timeout in minutes'
     required: false
     default: '20'
+  make-target:
+    description: 'Make target to build. Empty = look up MAKE_TARGET_<compiler> in ci-config.env'
+    required: false
+    default: ''
+  make-flags:
+    description: 'Extra make arguments for this build (e.g. "OPENMP=true"), added after the compiler defaults from ci-config.env'
+    required: false
+    default: ''
   use-target-arch:
     description: 'NVHPC only: add NVHPC_TARGET_ARCH from ci-config.env to the build flags (true/false). Use false for performance runs.'
     required: false
@@ -49,6 +57,9 @@ runs:
     - name: Build MPAS-A
       id: build
       shell: bash
+      env:
+        INPUT_MAKE_TARGET: ${{ inputs.make-target }}
+        INPUT_MAKE_FLAGS: ${{ inputs.make-flags }}
       run: |
         # Source container environment if available
         # This sets NETCDF, PNETCDF, PIO, and other library paths
@@ -112,9 +123,12 @@ runs:
           source "${CI_CONFIG}"
         fi
 
-        # Map COMPILER_FAMILY to make target via ci-config.env lookup
-        VARNAME="MAKE_TARGET_${COMPILER_FAMILY}"
-        MAKE_TARGET="${!VARNAME}"
+        # Make target: the make-target input, else MAKE_TARGET_<compiler> from ci-config.env
+        MAKE_TARGET="${INPUT_MAKE_TARGET}"
+        if [ -z "${MAKE_TARGET}" ]; then
+          VARNAME="MAKE_TARGET_${COMPILER_FAMILY}"
+          MAKE_TARGET="${!VARNAME}"
+        fi
         if [ -z "${MAKE_TARGET}" ]; then
           echo "::error::No make target for COMPILER_FAMILY=${COMPILER_FAMILY}. Add MAKE_TARGET_${COMPILER_FAMILY}= to .github/ci-config.env"
           exit 1
@@ -126,7 +140,6 @@ runs:
           *) echo "::error::Unsupported core '${{ inputs.core }}' (atmosphere, init_atmosphere)"; exit 1 ;;
         esac
 
-        EXTRA_MAKE_FLAGS=""
         if [ "${COMPILER_FAMILY}" = "nvhpc" ]; then
           ARCH=""
           if [ "${{ inputs.use-target-arch }}" = "true" ]; then
@@ -134,20 +147,25 @@ runs:
           fi
           if [ -n "${ARCH}" ]; then
             for FLAG in FFLAGS_OPT CFLAGS_OPT CXXFLAGS_OPT LDFLAGS_OPT; do
-              if ! sed -n '/^nvhpc:/,/^[a-z]/p' Makefile | grep -qF "\"${FLAG} = "; then
-                echo "::error::Could not locate ${FLAG} in the NVHPC Makefile target"
+              if ! sed -n "/^${MAKE_TARGET}:/,/^[a-z]/p" Makefile | grep -qF "\"${FLAG} = "; then
+                echo "::error::Could not locate ${FLAG} in the '${MAKE_TARGET}' Makefile target"
                 exit 1
               fi
               # Skip if already applied (the action can run twice in one source tree)
-              if sed -n '/^nvhpc:/,/^[a-z]/p' Makefile | grep -qF "\"${FLAG} = ${ARCH} "; then
+              if sed -n "/^${MAKE_TARGET}:/,/^[a-z]/p" Makefile | grep -qF "\"${FLAG} = ${ARCH} "; then
                 continue
               fi
-              sed -i "/^nvhpc:/,/^[a-z]/ s/\"${FLAG} = /\"${FLAG} = ${ARCH} /" Makefile
+              sed -i "/^${MAKE_TARGET}:/,/^[a-z]/ s/\"${FLAG} = /\"${FLAG} = ${ARCH} /" Makefile
             done
           fi
-          EXTRA_MAKE_FLAGS="${NVHPC_EXTRA_MAKE_FLAGS}"
-        elif [ "${COMPILER_FAMILY}" = "oneapi" ]; then
-          EXTRA_MAKE_FLAGS="${ONEAPI_EXTRA_MAKE_FLAGS}"
+        fi
+
+        # Compiler defaults from ci-config.env (<FAMILY>_EXTRA_MAKE_FLAGS, family in
+        # upper case), then the make-flags input
+        FLAGS_VAR="${COMPILER_FAMILY^^}_EXTRA_MAKE_FLAGS"
+        EXTRA_MAKE_FLAGS="${!FLAGS_VAR}"
+        if [ -n "${INPUT_MAKE_FLAGS}" ]; then
+          EXTRA_MAKE_FLAGS="${EXTRA_MAKE_FLAGS:+${EXTRA_MAKE_FLAGS} }${INPUT_MAKE_FLAGS}"
         fi
 
         echo "  Make target: ${MAKE_TARGET}"
