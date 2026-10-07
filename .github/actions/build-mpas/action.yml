@@ -25,6 +25,14 @@ inputs:
     description: 'Build timeout in minutes'
     required: false
     default: '20'
+  use-target-arch:
+    description: 'NVHPC only: add NVHPC_TARGET_ARCH from ci-config.env to the build flags (true/false). Use false for performance runs.'
+    required: false
+    default: 'true'
+  clean-core:
+    description: 'Run "make clean" for this core before building (use when a different core was built earlier in the same source tree; empty = no clean)'
+    required: false
+    default: ''
   log-file:
     description: 'Write the build output to this file as well as the job log (empty = no file)'
     required: false
@@ -61,7 +69,7 @@ runs:
             apt-get update && apt-get install -y cpp
           fi
         fi
-        
+
         # Map compiler input to COMPILER_FAMILY if not already set
         # The container should set this, but we provide a fallback
         if [ -z "${COMPILER_FAMILY}" ]; then
@@ -73,7 +81,7 @@ runs:
             *)                  export COMPILER_FAMILY="${{ inputs.compiler }}" ;;
           esac
         fi
-        
+
         # Set up I/O configuration
         if [ "${{ inputs.use-pio }}" = "true" ]; then
           export PIO_ROOT=${PIO_ROOT:-/container/pio}
@@ -82,12 +90,12 @@ runs:
           unset PIO
           export USE_PIO2=false
         fi
-        
+
         # Set up accelerator configuration
         if [ "${{ inputs.openacc }}" = "true" ]; then
           export OPENACC=true
         fi
-        
+
         echo "Build configuration:"
         echo "  Core: ${{ inputs.core }}"
         echo "  Compiler input: ${{ inputs.compiler }}"
@@ -97,7 +105,7 @@ runs:
         echo "  USE_PIO2: ${USE_PIO2}"
         echo "  OPENACC: ${OPENACC:-false}"
         echo "  PRECISION: ${{ inputs.precision }}"
-        
+
         # Settings from .github/ci-config.env — edit that file to change targets/workarounds
         CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
         if [ -f "${CI_CONFIG}" ]; then
@@ -120,14 +128,23 @@ runs:
 
         EXTRA_MAKE_FLAGS=""
         if [ "${COMPILER_FAMILY}" = "nvhpc" ]; then
-          ARCH="${NVHPC_TARGET_ARCH:--tp=px}"
-          for FLAG in FFLAGS_OPT CFLAGS_OPT CXXFLAGS_OPT LDFLAGS_OPT; do
-            if ! sed -n '/^nvhpc:/,/^[a-z]/p' Makefile | grep -qF "\"${FLAG} = "; then
-              echo "::error::Could not locate ${FLAG} in the NVHPC Makefile target"
-              exit 1
-            fi
-            sed -i "/^nvhpc:/,/^[a-z]/ s/\"${FLAG} = /\"${FLAG} = ${ARCH} /" Makefile
-          done
+          ARCH=""
+          if [ "${{ inputs.use-target-arch }}" = "true" ]; then
+            ARCH="${NVHPC_TARGET_ARCH}"
+          fi
+          if [ -n "${ARCH}" ]; then
+            for FLAG in FFLAGS_OPT CFLAGS_OPT CXXFLAGS_OPT LDFLAGS_OPT; do
+              if ! sed -n '/^nvhpc:/,/^[a-z]/p' Makefile | grep -qF "\"${FLAG} = "; then
+                echo "::error::Could not locate ${FLAG} in the NVHPC Makefile target"
+                exit 1
+              fi
+              # Skip if already applied (the action can run twice in one source tree)
+              if sed -n '/^nvhpc:/,/^[a-z]/p' Makefile | grep -qF "\"${FLAG} = ${ARCH} "; then
+                continue
+              fi
+              sed -i "/^nvhpc:/,/^[a-z]/ s/\"${FLAG} = /\"${FLAG} = ${ARCH} /" Makefile
+            done
+          fi
           EXTRA_MAKE_FLAGS="${NVHPC_EXTRA_MAKE_FLAGS}"
         elif [ "${COMPILER_FAMILY}" = "oneapi" ]; then
           EXTRA_MAKE_FLAGS="${ONEAPI_EXTRA_MAKE_FLAGS}"
@@ -142,6 +159,10 @@ runs:
           PRECISION_FLAG="PRECISION=double"
         fi
 
+        CLEAN_CMD=""
+        if [ -n "${{ inputs.clean-core }}" ]; then
+          CLEAN_CMD="make clean CORE=${{ inputs.clean-core }}"
+        fi
         MAKE_CMD="timeout ${{ inputs.build-timeout }}m make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}"
 
         # Print tool versions and the exact build command (job log + log file).
@@ -172,7 +193,14 @@ runs:
           echo "Precision:       ${{ inputs.precision }}"
           echo "Container OS:    $( (. /etc/os-release && echo "${PRETTY_NAME}") 2>/dev/null || echo unknown)"
           if [ "${COMPILER_FAMILY}" = "nvhpc" ]; then
-            echo "Makefile edit:   added ${ARCH} to FFLAGS_OPT, CFLAGS_OPT, CXXFLAGS_OPT, LDFLAGS_OPT"
+            if [ -n "${ARCH}" ]; then
+              echo "Makefile edit:   added ${ARCH} to FFLAGS_OPT, CFLAGS_OPT, CXXFLAGS_OPT, LDFLAGS_OPT"
+            else
+              echo "Makefile edit:   none (use-target-arch is false)"
+            fi
+          fi
+          if [ -n "${CLEAN_CMD}" ]; then
+            echo "Clean command:   ${CLEAN_CMD}"
           fi
           echo "Build command:   ${MAKE_CMD}"
           echo "==== End build environment ===="
@@ -181,9 +209,12 @@ runs:
         LOG_FILE="${{ inputs.log-file }}"
         set -o pipefail
         print_build_env | tee "${LOG_FILE:-/dev/null}"
+        if [ -n "${CLEAN_CMD}" ]; then
+          ${CLEAN_CMD} 2>&1 | tee -a "${LOG_FILE:-/dev/null}"
+        fi
         ${MAKE_CMD} 2>&1 | tee -a "${LOG_FILE:-/dev/null}"
-        
-        echo "executable=$(pwd)/${EXE}" >> $GITHUB_OUTPUT
+
+        echo "executable=$(pwd)/${EXE}" >> "$GITHUB_OUTPUT"
 
     - name: Verify executable
       shell: bash

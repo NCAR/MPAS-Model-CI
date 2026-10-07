@@ -1,5 +1,6 @@
-# Reusable workflow: build the MPAS-A cores (atmosphere, init_atmosphere)
-# for a single compiler + MPI, using SMIOL I/O in double precision.
+# Reusable workflow: build the MPAS-A cores for a single compiler + MPI,
+# using SMIOL I/O in double precision. Both cores are built in one source
+# tree, in sequence: atmosphere first, then init_atmosphere.
 # Called by per-compiler workflows (e.g. build-gcc-mpich.yml).
 # Build only: no model runs and no validation.
 
@@ -24,11 +25,12 @@ jobs:
   config:
     name: Resolve Config
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
     outputs:
       image: ${{ steps.container.outputs.image }}
       sha: ${{ steps.sha.outputs.short }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           sparse-checkout: .github
           persist-credentials: false
@@ -46,57 +48,77 @@ jobs:
 
   build:
     needs: config
-    name: Build ${{ matrix.core }} (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)
+    name: Build atmosphere + init_atmosphere (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)
     runs-on: ubuntu-26.04
+    timeout-minutes: 60
     container:
       image: ${{ needs.config.outputs.image }}
-    strategy:
-      fail-fast: false
-      matrix:
-        core: [atmosphere, init_atmosphere]
 
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: 'true'
           persist-credentials: false
 
-      - name: Build ${{ matrix.core }} (double precision)
-        id: build
+      # atmosphere first: it is the more likely to fail
+      - name: Build atmosphere (double precision)
+        id: atmosphere
         uses: ./.github/actions/build-mpas
         with:
           compiler: ${{ inputs.compiler }}
-          core: ${{ matrix.core }}
+          core: atmosphere
           use-pio: 'false'
           precision: double
-          log-file: build-${{ matrix.core }}.log
+          log-file: build-atmosphere.log
+
+      # Same source tree: clean atmosphere, then build init_atmosphere.
+      # Skipped (not failed) if the atmosphere build failed.
+      - name: Build init_atmosphere (double precision)
+        id: init_atmosphere
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          core: init_atmosphere
+          clean-core: atmosphere
+          use-pio: 'false'
+          precision: double
+          log-file: build-init_atmosphere.log
 
       - name: Summary
         if: always()
         shell: bash
         run: |
-          if [ "${{ steps.build.outcome }}" = "success" ]; then
-            echo "✅ **${{ matrix.core }}**: built $(basename '${{ steps.build.outputs.executable }}') (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "❌ **${{ matrix.core }}**: build failed (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          LOG="build-${{ matrix.core }}.log"
-          if [ -f "${LOG}" ]; then
-            {
-              echo "<details><summary>Build environment and command</summary>"
+          summarize() {  # core, step outcome, executable path
+            local core="$1" outcome="$2" exe="$3" log="build-$1.log"
+            if [ "${outcome}" = "success" ]; then
+              echo "✅ **${core}**: built $(basename "${exe}") (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)"
+            elif [ "${outcome}" = "skipped" ]; then
+              echo "⏭️ **${core}**: skipped"
+            else
+              echo "❌ **${core}**: build failed (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)"
+            fi
+            if [ -f "${log}" ]; then
+              echo "<details><summary>${core}: build environment and command</summary>"
               echo
               echo '```'
-              sed -n '/^==== Build environment/,/^==== End build environment/p' "${LOG}"
+              sed -n '/^==== Build environment/,/^==== End build environment/p' "${log}"
               echo '```'
               echo "</details>"
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+              echo
+            fi
+          }
+          {
+            summarize atmosphere "${{ steps.atmosphere.outcome }}" "${{ steps.atmosphere.outputs.executable }}"
+            summarize init_atmosphere "${{ steps.init_atmosphere.outcome }}" "${{ steps.init_atmosphere.outputs.executable }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload build log
+      - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: build-log-${{ needs.config.outputs.sha }}-${{ inputs.compiler }}-${{ inputs.mpi }}-smiol-${{ matrix.core }}
-          path: build-${{ matrix.core }}.log
+          name: build-logs-${{ needs.config.outputs.sha }}-${{ inputs.compiler }}-${{ inputs.mpi }}-smiol
+          path: |
+            build-atmosphere.log
+            build-init_atmosphere.log
           if-no-files-found: ignore
           retention-days: 7
