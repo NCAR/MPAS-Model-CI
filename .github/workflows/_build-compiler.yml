@@ -1,5 +1,6 @@
-# Reusable workflow: build the MPAS-A cores for a single compiler + MPI,
-# using SMIOL I/O in double precision. Both cores are built in one source
+# Reusable workflow: build the MPAS-A cores for a single compiler + MPI.
+# The I/O layer (smiol or pio) and precision (single or double) are inputs;
+# the defaults are smiol and double. Both cores are built in one source
 # tree, in sequence: atmosphere first, then init_atmosphere.
 # Called by per-compiler workflows (e.g. build-gcc-mpich.yml).
 # Build only: no model runs and no validation.
@@ -20,6 +21,16 @@ on:
         description: 'MPI implementation (mpich, openmpi)'
         required: true
         type: string
+      io:
+        description: 'I/O layer (smiol, pio)'
+        required: false
+        type: string
+        default: 'smiol'
+      precision:
+        description: 'Floating-point precision (single, double)'
+        required: false
+        type: string
+        default: 'double'
 
 jobs:
   config:
@@ -39,6 +50,14 @@ jobs:
         with:
           compiler: ${{ inputs.compiler }}
           mpi: ${{ inputs.mpi }}
+      - name: Check inputs
+        shell: bash
+        env:
+          IO: ${{ inputs.io }}
+          PRECISION: ${{ inputs.precision }}
+        run: |
+          case "${IO}" in smiol|pio) ;; *) echo "::error::io must be smiol or pio (got '${IO}')"; exit 1 ;; esac
+          case "${PRECISION}" in single|double) ;; *) echo "::error::precision must be single or double (got '${PRECISION}')"; exit 1 ;; esac
       - name: Short commit SHA (PR head for pull requests)
         id: sha
         shell: bash
@@ -48,7 +67,7 @@ jobs:
 
   build:
     needs: config
-    name: Build atmosphere + init_atmosphere (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)
+    name: Build atmosphere + init_atmosphere (${{ inputs.compiler }}, ${{ inputs.mpi }}, ${{ inputs.io }}, ${{ inputs.precision }})
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     container:
@@ -61,27 +80,27 @@ jobs:
           persist-credentials: false
 
       # atmosphere first: it is the more likely to fail
-      - name: Build atmosphere (double precision)
+      - name: Build atmosphere (${{ inputs.precision }} precision, ${{ inputs.io }})
         id: atmosphere
         uses: ./.github/actions/build-mpas
         with:
           compiler: ${{ inputs.compiler }}
           core: atmosphere
-          use-pio: 'false'
-          precision: double
+          use-pio: ${{ inputs.io == 'pio' && 'true' || 'false' }}
+          precision: ${{ inputs.precision }}
           log-file: build-atmosphere.log
 
       # Same source tree: clean atmosphere, then build init_atmosphere.
       # Skipped (not failed) if the atmosphere build failed.
-      - name: Build init_atmosphere (double precision)
+      - name: Build init_atmosphere (${{ inputs.precision }} precision, ${{ inputs.io }})
         id: init_atmosphere
         uses: ./.github/actions/build-mpas
         with:
           compiler: ${{ inputs.compiler }}
           core: init_atmosphere
           clean-core: atmosphere
-          use-pio: 'false'
-          precision: double
+          use-pio: ${{ inputs.io == 'pio' && 'true' || 'false' }}
+          precision: ${{ inputs.precision }}
           log-file: build-init_atmosphere.log
 
       - name: Summary
@@ -91,11 +110,11 @@ jobs:
           summarize() {  # core, step outcome, executable path
             local core="$1" outcome="$2" exe="$3" log="build-$1.log"
             if [ "${outcome}" = "success" ]; then
-              echo "✅ **${core}**: built $(basename "${exe}") (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)"
+              echo "✅ **${core}**: built $(basename "${exe}") (${{ inputs.compiler }}, ${{ inputs.mpi }}, ${{ inputs.io }}, ${{ inputs.precision }})"
             elif [ "${outcome}" = "skipped" ]; then
               echo "⏭️ **${core}**: skipped"
             else
-              echo "❌ **${core}**: build failed (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)"
+              echo "❌ **${core}**: build failed (${{ inputs.compiler }}, ${{ inputs.mpi }}, ${{ inputs.io }}, ${{ inputs.precision }})"
             fi
             if [ -f "${log}" ]; then
               echo "<details><summary>${core}: build environment and command</summary>"
@@ -116,7 +135,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: build-logs-${{ needs.config.outputs.sha }}-${{ inputs.compiler }}-${{ inputs.mpi }}-smiol
+          name: build-logs-${{ needs.config.outputs.sha }}-${{ inputs.compiler }}-${{ inputs.mpi }}-${{ inputs.io }}-${{ inputs.precision }}
           path: |
             build-atmosphere.log
             build-init_atmosphere.log
