@@ -183,50 +183,17 @@ runs:
         fi
         MAKE_CMD="timeout ${{ inputs.build-timeout }}m make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}"
 
-        # Print tool versions and the exact build command (job log + log file).
-        print_build_env() {
-          # First non-empty line of a command's output, or "not found"
-          v() { command -v "$1" >/dev/null 2>&1 || { echo "not found"; return 0; }; { "$@" 2>&1 || true; } | grep -m1 . || true; }
-          case "${COMPILER_FAMILY}" in
-            gcc)    FC_SER=gfortran;  CC_SER=gcc;    FC_MPI=mpif90 ;;
-            oneapi) FC_SER=ifx;       CC_SER=icx;    FC_MPI=mpifort ;;
-            nvhpc)  FC_SER=nvfortran; CC_SER=nvc;    FC_MPI=mpifort ;;
-            *)      FC_SER=mpifort;   CC_SER=mpicc;  FC_MPI=mpifort ;;
-          esac
-          PATH="${NETCDF:+${NETCDF}/bin:}${PNETCDF:+${PNETCDF}/bin:}${PATH}"
-          echo "==== Build environment ===="
-          echo "Core:            ${{ inputs.core }} (${COMPILER_FAMILY}, make target ${MAKE_TARGET})"
-          echo "Fortran:         $(v ${FC_SER} --version)"
-          echo "C:               $(v ${CC_SER} --version)"
-          echo "MPI:             $(v mpichversion)"
-          echo "MPI wrapper:     $(v ${FC_MPI} -show | cut -c1-160)"
-          echo "NetCDF-C:        $(v nc-config --version)"
-          echo "NetCDF-Fortran:  $(v nf-config --version)"
-          echo "PnetCDF:         $(v pnetcdf-config --version)"
-          if [ "${{ inputs.use-pio }}" = "true" ]; then
-            echo "I/O layer:       PIO (${PIO_ROOT})"
-          else
-            echo "I/O layer:       SMIOL (in-tree)"
-          fi
-          echo "Precision:       ${{ inputs.precision }}"
-          echo "Container OS:    $( (. /etc/os-release && echo "${PRETTY_NAME}") 2>/dev/null || echo unknown)"
-          if [ "${COMPILER_FAMILY}" = "nvhpc" ]; then
-            if [ -n "${ARCH}" ]; then
-              echo "Makefile edit:   added ${ARCH} to FFLAGS_OPT, CFLAGS_OPT, CXXFLAGS_OPT, LDFLAGS_OPT"
-            else
-              echo "Makefile edit:   none (use-target-arch is false)"
-            fi
-          fi
-          if [ -n "${CLEAN_CMD}" ]; then
-            echo "Clean command:   ${CLEAN_CMD}"
-          fi
-          echo "Build command:   ${MAKE_CMD}"
-          echo "==== End build environment ===="
-        }
-
         LOG_FILE="${{ inputs.log-file }}"
         set -o pipefail
-        print_build_env | tee "${LOG_FILE:-/dev/null}"
+        # Tool versions and the exact commands (job log + log file)
+        PRINT_ENV="${GITHUB_WORKSPACE}/.github/actions/build-mpas/print-build-env.sh"
+        if [ ! -f "${PRINT_ENV}" ]; then
+          echo "::error::${PRINT_ENV} not found"
+          exit 1
+        fi
+        export COMPILER_FAMILY MAKE_TARGET ARCH CLEAN_CMD MAKE_CMD
+        CORE="${{ inputs.core }}" USE_PIO="${{ inputs.use-pio }}" PRECISION="${{ inputs.precision }}" \
+          bash "${PRINT_ENV}" | tee "${LOG_FILE:-/dev/null}"
         if [ -n "${CLEAN_CMD}" ]; then
           ${CLEAN_CMD} 2>&1 | tee -a "${LOG_FILE:-/dev/null}"
         fi
