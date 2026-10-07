@@ -80,6 +80,17 @@ jobs:
           else
             echo "❌ **${{ matrix.core }}**: build failed (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)" >> "$GITHUB_STEP_SUMMARY"
           fi
+          LOG="build-${{ matrix.core }}.log"
+          if [ -f "${LOG}" ]; then
+            {
+              echo "<details><summary>Build environment and command</summary>"
+              echo
+              echo '```'
+              sed -n '/^==== Build environment/,/^==== End build environment/p' "${LOG}"
+              echo '```'
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload build log
         if: always()
