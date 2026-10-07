@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.container.outputs.image }}
+      sha: ${{ steps.sha.outputs.short }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
@@ -36,6 +37,12 @@ jobs:
         with:
           compiler: ${{ inputs.compiler }}
           mpi: ${{ inputs.mpi }}
+      - name: Short commit SHA (PR head for pull requests)
+        id: sha
+        shell: bash
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: echo "short=${SHA::7}" >> "$GITHUB_OUTPUT"
 
   build:
     needs: config
@@ -55,9 +62,30 @@ jobs:
           persist-credentials: false
 
       - name: Build ${{ matrix.core }} (double precision)
+        id: build
         uses: ./.github/actions/build-mpas
         with:
           compiler: ${{ inputs.compiler }}
           core: ${{ matrix.core }}
           use-pio: 'false'
           precision: double
+          log-file: build-${{ matrix.core }}.log
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.build.outcome }}" = "success" ]; then
+            echo "✅ **${{ matrix.core }}**: built $(basename '${{ steps.build.outputs.executable }}') (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ **${{ matrix.core }}**: build failed (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: build-log-${{ needs.config.outputs.sha }}-${{ inputs.compiler }}-${{ inputs.mpi }}-smiol-${{ matrix.core }}
+          path: build-${{ matrix.core }}.log
+          if-no-files-found: ignore
+          retention-days: 7

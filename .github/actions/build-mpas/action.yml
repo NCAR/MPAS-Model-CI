@@ -25,6 +25,10 @@ inputs:
     description: 'Build timeout in minutes'
     required: false
     default: '20'
+  log-file:
+    description: 'Write the build output to this file as well as the job log (empty = no file)'
+    required: false
+    default: ''
 
 outputs:
   executable:
@@ -138,8 +142,11 @@ runs:
           PRECISION_FLAG="PRECISION=double"
         fi
 
+        LOG_FILE="${{ inputs.log-file }}"
+        set -o pipefail
         timeout ${{ inputs.build-timeout }}m \
-          make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}
+          make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)} \
+          2>&1 | tee "${LOG_FILE:-/dev/null}"
         
         echo "executable=$(pwd)/${EXE}" >> $GITHUB_OUTPUT
 
