@@ -1,0 +1,63 @@
+# Reusable workflow: build the MPAS-A cores (atmosphere, init_atmosphere)
+# for a single compiler + MPI, using SMIOL I/O in double precision.
+# Called by per-compiler workflows (e.g. build-gcc-mpich.yml).
+# Build only: no model runs and no validation.
+
+name: _build-compiler
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler family (gcc, nvhpc, oneapi)'
+        required: true
+        type: string
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: true
+        type: string
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+
+  build:
+    needs: config
+    name: Build ${{ matrix.core }} (${{ inputs.compiler }}, ${{ inputs.mpi }}, smiol)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        core: [atmosphere, init_atmosphere]
+
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          submodules: 'true'
+          persist-credentials: false
+
+      - name: Build ${{ matrix.core }} (double precision)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          core: ${{ matrix.core }}
+          use-pio: 'false'
+          precision: double

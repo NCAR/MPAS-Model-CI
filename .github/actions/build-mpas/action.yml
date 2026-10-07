@@ -5,6 +5,10 @@ inputs:
   compiler:
     description: 'Compiler family (gcc, nvhpc, oneapi, etc.)'
     required: true
+  core:
+    description: 'MPAS core to build (atmosphere, init_atmosphere)'
+    required: false
+    default: 'atmosphere'
   use-pio:
     description: 'Use PIO library (true/false)'
     required: false
@@ -24,7 +28,7 @@ inputs:
 
 outputs:
   executable:
-    description: 'Path to built executable'
+    description: 'Path to built executable (atmosphere_model or init_atmosphere_model)'
     value: ${{ steps.build.outputs.executable }}
 
 runs:
@@ -81,6 +85,7 @@ runs:
         fi
         
         echo "Build configuration:"
+        echo "  Core: ${{ inputs.core }}"
         echo "  Compiler input: ${{ inputs.compiler }}"
         echo "  COMPILER_FAMILY: ${COMPILER_FAMILY}"
         echo "  NETCDF: ${NETCDF:-not set}"
@@ -102,6 +107,12 @@ runs:
           echo "::error::No make target for COMPILER_FAMILY=${COMPILER_FAMILY}. Add MAKE_TARGET_${COMPILER_FAMILY}= to .github/ci-config.env"
           exit 1
         fi
+
+        case "${{ inputs.core }}" in
+          atmosphere)      EXE="atmosphere_model" ;;
+          init_atmosphere) EXE="init_atmosphere_model" ;;
+          *) echo "::error::Unsupported core '${{ inputs.core }}' (atmosphere, init_atmosphere)"; exit 1 ;;
+        esac
 
         EXTRA_MAKE_FLAGS=""
         if [ "${COMPILER_FAMILY}" = "nvhpc" ]; then
@@ -128,16 +139,17 @@ runs:
         fi
 
         timeout ${{ inputs.build-timeout }}m \
-          make ${MAKE_TARGET} CORE=atmosphere ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}
+          make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}
         
-        echo "executable=$(pwd)/atmosphere_model" >> $GITHUB_OUTPUT
+        echo "executable=$(pwd)/${EXE}" >> $GITHUB_OUTPUT
 
     - name: Verify executable
       shell: bash
       run: |
-        if [ ! -f atmosphere_model ]; then
-          echo "ERROR: atmosphere_model not found!"
+        EXE="${{ steps.build.outputs.executable }}"
+        if [ ! -f "${EXE}" ]; then
+          echo "::error::${EXE} not found"
           exit 1
         fi
-        ls -la atmosphere_model
-        file atmosphere_model
+        ls -la "${EXE}"
+        file "${EXE}"
