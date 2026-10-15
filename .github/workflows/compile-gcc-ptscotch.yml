@@ -1,0 +1,64 @@
+# GCC + MPICH: compile-only test linking MPAS against PT-SCOTCH.
+# PT-SCOTCH isn't preinstalled in the hpcdev containers, so this builds and
+# caches a static install (see .github/actions/build-scotch) before building
+# MPAS. Validates linkage only (no model run) — see .github/ci-config.env for
+# the pinned SCOTCH_VERSION.
+
+name: "GCC+MPICH+PT-SCOTCH (compile-only)"
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master, develop, 'hackathon-*', 'PRtest-*', 'hotfix-*', 'hotfix/**']
+
+jobs:
+  config:
+    name: Resolve container
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: mpich
+
+  compile:
+    needs: config
+    name: Compile (PT-SCOTCH, MPICH)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: 'true'
+
+      - name: Build PT-SCOTCH
+        id: scotch
+        uses: ./.github/actions/build-scotch
+        with:
+          compiler: gcc
+          mpi: mpich
+
+      - name: Build MPAS-A (double precision, PT-SCOTCH)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: gcc
+          use-pio: 'false'
+          scotch-root: ${{ steps.scotch.outputs.scotch-root }}
+          precision: double
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "## GCC + MPICH + PT-SCOTCH compile-only" >> "$GITHUB_STEP_SUMMARY"
+          echo "Built \`atmosphere_model\` linked against PT-SCOTCH in ${{ needs.config.outputs.image }}." >> "$GITHUB_STEP_SUMMARY"
