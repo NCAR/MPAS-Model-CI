@@ -33,7 +33,7 @@ Keep `-sl`/`-ll` outside `.sane/` (it scans recursively). Reuse of saved state s
 actions; pass `-n` for a fresh run.
 
 ## Site settings to review
-* `account` and `config.mpas.*` in `hosts/derecho.jsonc` (account NTDD0005 and the test-data
+* `account` and `config.mpas.*` in `hosts/derecho.jsonc` (account NTDD0004 and the test-data
   and Python paths are the author's; override with a host patch via `-p`).
 * `config.mpas.python` needs `netCDF4` + `numpy` (only used if `cmp` reports a difference).
 * Not carried over from the GitHub CI containers: `MPAS_MPI_F08=0`, `-tp=px`.
