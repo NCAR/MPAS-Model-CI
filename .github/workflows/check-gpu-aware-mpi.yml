@@ -1,0 +1,98 @@
+# Does each GPU container's MPI support GPU-aware (device-buffer) communication?
+#
+# Builds a 2-rank device-buffer exchange (.github/scripts/gpu-aware-mpi-check/devsend.f90) with the container's own nvfortran and
+# MPI and runs it on a CIRRUS GPU runner with: the container's default environment, the environment the GPU workflows set for
+# gpu-aware-mpi=true (.github/scripts/gpu-aware-mpi-env.sh), and a control with GPU support switched off (expected to fail).
+# Static facts about the MPI/UCX build (mpichversion / ompi_info / ucx_info / libmpi links) go to the run summary and the artifact.
+#
+# workflow_dispatch only: self-hosted CIRRUS runners must never trigger on push/pull_request (fork / unreviewed-code risk).
+
+name: "Check: GPU-aware MPI in the GPU containers"
+
+on:
+  workflow_dispatch:
+    inputs:
+      mpi:
+        description: 'MPI implementation(s) to check'
+        required: false
+        type: choice
+        options: [both, mpich, openmpi]
+        default: both
+      strict:
+        description: 'Fail the run when the CI environment (gpu-aware-mpi-env.sh) does not pass'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  config:
+    name: Resolve containers
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - uses: ./.github/actions/resolve-container
+        id: mpich
+        with:
+          compiler: nvhpc
+          mpi: mpich
+          gpu: cuda
+      - uses: ./.github/actions/resolve-container
+        id: openmpi
+        with:
+          compiler: nvhpc
+          mpi: openmpi
+          gpu: cuda
+      - name: Build matrix
+        id: matrix
+        env:
+          SELECT: ${{ inputs.mpi }}
+          IMG_MPICH: ${{ steps.mpich.outputs.image }}
+          IMG_OPENMPI: ${{ steps.openmpi.outputs.image }}
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json, os
+          sel = os.environ["SELECT"] or "both"
+          inc = []
+          if sel in ("both", "mpich"):   inc.append({"mpi": "mpich",   "image": os.environ["IMG_MPICH"]})
+          if sel in ("both", "openmpi"): inc.append({"mpi": "openmpi", "image": os.environ["IMG_OPENMPI"]})
+          print("matrix=" + json.dumps({"include": inc}))
+          PY
+          echo "Containers to check:"; python3 -c 'import json,sys; [print("  ",i["mpi"],i["image"]) for i in json.loads(sys.argv[1])["include"]]' "$(grep '^matrix=' "${GITHUB_OUTPUT}" | cut -d= -f2-)"
+
+  check:
+    needs: config
+    name: ${{ matrix.mpi }}
+    runs-on:
+      group: CIRRUS-4x8-gpu
+    container:
+      image: ${{ matrix.image }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.config.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+
+      - name: GPU information
+        run: |
+          nvidia-smi || echo "WARNING: nvidia-smi failed (the GPU can still be usable by applications)"
+
+      - name: Check GPU-aware MPI (${{ matrix.mpi }})
+        continue-on-error: ${{ !inputs.strict }}
+        run: bash .github/scripts/gpu-aware-mpi-check/check.sh "${{ matrix.mpi }}"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gpu-aware-mpi-check-${{ matrix.mpi }}
+          path: gpu-aware-mpi-check-${{ matrix.mpi }}/
+          retention-days: 7
