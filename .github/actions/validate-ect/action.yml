@@ -15,6 +15,13 @@ inputs:
   ect-tag:
     description: 'ECT data release tag (from the mpas-version action, e.g. ect-v8.4)'
     required: true
+  summary-file:
+    description: 'Ensemble summary release asset name for the ECT case (from resolve-ect-case)'
+    required: true
+  ect-case:
+    description: "Resolved ECT case name (from resolve-ect-case). Recorded as the 'ect-case' column of the result."
+    required: false
+    default: ''
   dimensions:
     description: 'Multi-line key=value pairs describing this test combination (written into result file)'
     required: false
@@ -44,7 +51,11 @@ runs:
 
         # ECT release tag is passed in, not stored in ci-config.env.
         # See .github/actions/mpas-version.
-        echo "summary-file=${ECT_SUMMARY_FILE}" >> $GITHUB_OUTPUT
+        if [ -z "${{ inputs.summary-file }}" ]; then
+          echo "::error::summary-file is required (resolve it with the resolve-ect-case action)"
+          exit 1
+        fi
+        echo "summary-file=${{ inputs.summary-file }}" >> $GITHUB_OUTPUT
         echo "pycect-tag=${PYCECT_TAG}" >> $GITHUB_OUTPUT
         echo "pycect-commit=${PYCECT_COMMIT}" >> $GITHUB_OUTPUT
         echo "release-tag=${{ inputs.ect-tag }}" >> $GITHUB_OUTPUT
@@ -206,5 +217,8 @@ runs:
           DIMS="${{ inputs.dimensions }}"
           if [ -n "${DIMS}" ]; then
             echo "${DIMS}"
+          fi
+          if [ -n "${{ inputs.ect-case }}" ]; then
+            echo "ect-case=${{ inputs.ect-case }}"
           fi
         } > ect-result.txt

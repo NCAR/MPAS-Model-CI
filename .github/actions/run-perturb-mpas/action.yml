@@ -33,6 +33,12 @@ inputs:
     description: 'MPI implementation (openmpi, mpich)'
     required: false
     default: 'openmpi'
+  excluded-vars:
+    description: 'Path (relative to the repo root) of the file listing history variables to drop before PyCECT (from resolve-ect-case)'
+    required: true
+  perturb-magnitude:
+    description: 'Magnitude of the initial-condition perturbation (from resolve-ect-case)'
+    required: true
   gpu-aware-mpi:
     description: >
       Use GPU-aware MPI halo exchanges (config_gpu_aware_mpi = .true. in each member's namelist plus the MPI
@@ -124,8 +130,14 @@ runs:
         fi
 
         EXCLUDE_FILE=""
-        if [ -n "${ECT_EXCLUDED_VARS}" ]; then
-          EXCLUDE_FILE="${GITHUB_WORKSPACE}/${ECT_EXCLUDED_VARS}"
+        EXCLUDED_VARS="${{ inputs.excluded-vars }}"
+        PERTURB_MAGNITUDE="${{ inputs.perturb-magnitude }}"
+        if [ -z "${PERTURB_MAGNITUDE}" ]; then
+          echo "::error::perturb-magnitude is required (resolve it with the resolve-ect-case action)"
+          exit 1
+        fi
+        if [ -n "${EXCLUDED_VARS}" ]; then
+          EXCLUDE_FILE="${GITHUB_WORKSPACE}/${EXCLUDED_VARS}"
         fi
 
         mkdir -p "${OUTDIR}"
@@ -173,7 +185,7 @@ runs:
 
           echo "[$(date +%H:%M:%S)] Perturbing theta (seed=${MEMBER})..."
           python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/perturb_theta.py \
-            "${PERTURB_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
+            "${PERTURB_FILE}" --seed ${MEMBER} --magnitude ${PERTURB_MAGNITUDE}
 
           if [ "${VERBOSE}" = "true" ]; then
             echo "  Restart MD5: $(md5sum "${PERTURB_FILE}" | cut -d' ' -f1)"

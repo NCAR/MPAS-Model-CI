@@ -13,6 +13,11 @@ name: _test-gpu
 on:
   workflow_call:
     inputs:
+      ect-case:
+        description: 'ECT case (a key under `cases` in .github/ect-cases.yml). Empty = the table default (mesoscale_reference).'
+        required: false
+        type: string
+        default: ''
       mpi:
         description: 'MPI implementation (mpich, openmpi)'
         required: true
@@ -43,6 +48,13 @@ jobs:
       image: ${{ steps.container.outputs.image }}
       image-gpu: ${{ steps.gpu-container.outputs.image }}
       ect-tag: ${{ steps.version.outputs.ect-tag }}
+      ect-resolution: ${{ steps.ectcase.outputs.resolution }}
+      ect-summary-file: ${{ steps.ectcase.outputs.summary-file }}
+      ect-restart-file: ${{ steps.ectcase.outputs.restart-file }}
+      ect-run-duration: ${{ steps.ectcase.outputs.run-duration }}
+      ect-excluded-vars: ${{ steps.ectcase.outputs.excluded-vars }}
+      ect-perturb-magnitude: ${{ steps.ectcase.outputs.perturb-magnitude }}
+      ect-case: ${{ steps.ectcase.outputs.case }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -63,6 +75,10 @@ jobs:
           gpu: cuda
       - uses: ./.github/actions/mpas-version
         id: version
+      - uses: ./.github/actions/resolve-ect-case
+        id: ectcase
+        with:
+          ect-case: ${{ inputs.ect-case }}
 
   build:
     needs: config
@@ -148,7 +164,7 @@ jobs:
         if: steps.download.outcome == 'success'
         uses: ./.github/actions/download-testdata
         with:
-          resolution: 120km
+          resolution: ${{ needs.config.outputs.ect-resolution }}
           dest-dir: base-case
 
       - name: Restore cached restart
@@ -157,7 +173,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart-${{ needs.config.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}
+          key: ect-spinup-restart-${{ needs.config.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}-${{ needs.config.outputs.ect-case }}
 
       - name: Download spin-up restart
         if: steps.download.outcome == 'success'
@@ -165,7 +181,7 @@ jobs:
         shell: bash
         run: |
           source .github/ci-config.env
-          RESTART="${ECT_RESTART_FILE}"
+          RESTART="${{ needs.config.outputs.ect-restart-file }}"
           RELEASE_TAG="${{ needs.config.outputs.ect-tag }}"
 
           if [ -f "spinup-restart.nc" ]; then
@@ -195,13 +211,15 @@ jobs:
         if: steps.download.outcome == 'success'
         uses: ./.github/actions/run-perturb-mpas
         with:
+          excluded-vars: ${{ needs.config.outputs.ect-excluded-vars }}
+          perturb-magnitude: ${{ needs.config.outputs.ect-perturb-magnitude }}
           base-dir: base-case
           executable: ./atmosphere_model
           member-start: '${{ matrix.member }}'
           member-end: '${{ matrix.member }}'
           num-ranks: '4'
           mpi-impl: ${{ inputs.mpi }}
-          run-duration: '0_02:36:00'
+          run-duration: ${{ needs.config.outputs.ect-run-duration }}
           run-timeout: '45'
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
           gpu-aware-mpi: ${{ inputs.gpu-aware-mpi }}
@@ -245,6 +263,8 @@ jobs:
           history-dir: ect-test-files
           label: nvhpc/${{ inputs.mpi }}/cuda/smiol
           ect-tag: ${{ needs.config.outputs.ect-tag }}
+          summary-file: ${{ needs.config.outputs.ect-summary-file }}
+          ect-case: ${{ needs.config.outputs.ect-case }}
           dimensions: |
             compiler=nvhpc
             mpi=${{ inputs.mpi }}

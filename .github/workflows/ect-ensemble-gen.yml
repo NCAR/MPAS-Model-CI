@@ -12,6 +12,11 @@ name: ECT Ensemble Generation
 on:
   workflow_dispatch:
     inputs:
+      ect-case:
+        description: 'ECT case (a key under `cases` in .github/ect-cases.yml). Empty = the table default (mesoscale_reference).'
+        required: false
+        type: string
+        default: ''
       mpas-repository:
         description: 'MPAS source repo (e.g. MPAS-Dev/MPAS-Model). Leave empty to use this repo.'
         required: false
@@ -21,10 +26,10 @@ on:
         required: false
         default: ''
       ensemble-size:
-        description: 'Number of ensemble members to generate'
-        type: number
+        description: "Number of ensemble members to generate. Empty = the case's ensemble-size from .github/ect-cases.yml."
+        type: string
         required: false
-        default: 200
+        default: ''
       members-per-job:
         description: 'Number of ensemble members to run per job (batch size)'
         type: number
@@ -58,10 +63,24 @@ jobs:
       batches: ${{ steps.compute.outputs.batches }}
       ensemble-size: ${{ steps.compute.outputs.ensemble-size }}
       container-image: ${{ steps.container.outputs.image }}
+      ect-case: ${{ steps.ectcase.outputs.case }}
+      ect-resolution: ${{ steps.ectcase.outputs.resolution }}
+      ect-summary-file: ${{ steps.ectcase.outputs.summary-file }}
+      ect-restart-file: ${{ steps.ectcase.outputs.restart-file }}
+      ect-spinup-duration: ${{ steps.ectcase.outputs.spinup-duration }}
+      ect-run-duration: ${{ steps.ectcase.outputs.run-duration }}
+      ect-perturb-variable: ${{ steps.ectcase.outputs.perturb-variable }}
+      ect-perturb-magnitude: ${{ steps.ectcase.outputs.perturb-magnitude }}
+      ect-excluded-vars: ${{ steps.ectcase.outputs.excluded-vars }}
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: .github
+
+      - uses: ./.github/actions/resolve-ect-case
+        id: ectcase
+        with:
+          ect-case: ${{ inputs.ect-case }}
 
       - uses: ./.github/actions/resolve-container
         id: container
@@ -72,7 +91,7 @@ jobs:
       - name: Compute batch ranges
         id: compute
         run: |
-          ESIZE=${{ inputs.ensemble-size || 200 }}
+          ESIZE=${{ inputs.ensemble-size || steps.ectcase.outputs.ensemble-size }}
           BATCH=${{ inputs.members-per-job || 10 }}
           echo "ensemble-size=${ESIZE}" >> $GITHUB_OUTPUT
 
@@ -172,7 +191,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart-${{ needs.build.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}
+          key: ect-spinup-restart-${{ needs.build.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}-${{ needs.prepare.outputs.ect-case }}
 
       - name: Download executable
         if: steps.cache.outputs.cache-hit != 'true'
@@ -189,21 +208,21 @@ jobs:
         uses: ./.github/actions/run-mpas
         with:
           executable: ./atmosphere_model
-          resolution: 120km
+          resolution: ${{ needs.prepare.outputs.ect-resolution }}
           num-procs: '4'
           mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
-          run-duration: '1_00:00:00'
-          restart-interval: '1_00:00:00'
+          run-duration: ${{ needs.prepare.outputs.ect-spinup-duration }}
+          restart-interval: ${{ needs.prepare.outputs.ect-spinup-duration }}
           run-timeout: '350'
           strict-exit-check: 'false'
 
       - name: Verify restart file
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          RESTART=$(ls run-120km/restart.*.nc 2>/dev/null | head -1)
+          RESTART=$(ls run-${{ needs.prepare.outputs.ect-resolution }}/restart.*.nc 2>/dev/null | head -1)
           if [ -z "${RESTART}" ]; then
             echo "::error::Spin-up did not produce a restart file"
-            ls -la run-120km/*.nc 2>/dev/null || true
+            ls -la run-${{ needs.prepare.outputs.ect-resolution }}/*.nc 2>/dev/null || true
             exit 1
           fi
           echo "Spin-up restart: ${RESTART} ($(du -h ${RESTART} | cut -f1))"
@@ -214,7 +233,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: spinup-restart.nc
-          key: ect-spinup-restart-${{ needs.build.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}
+          key: ect-spinup-restart-${{ needs.build.outputs.ect-tag }}-${{ hashFiles('.github/ci-config.env') }}-${{ needs.prepare.outputs.ect-case }}
 
       - name: Upload restart artifact
         uses: actions/upload-artifact@v6
@@ -252,7 +271,7 @@ jobs:
       - name: Download test case
         uses: ./.github/actions/download-testdata
         with:
-          resolution: 120km
+          resolution: ${{ needs.prepare.outputs.ect-resolution }}
           dest-dir: base-case
 
       - name: Download spin-up restart
@@ -263,13 +282,15 @@ jobs:
       - name: Run ensemble members ${{ matrix.batch.start }}-${{ matrix.batch.end }}
         uses: ./.github/actions/run-perturb-mpas
         with:
+          excluded-vars: ${{ needs.prepare.outputs.ect-excluded-vars }}
+          perturb-magnitude: ${{ needs.prepare.outputs.ect-perturb-magnitude }}
           base-dir: base-case
           executable: ./atmosphere_model
           member-start: ${{ matrix.batch.start }}
           member-end: ${{ matrix.batch.end }}
           num-ranks: ${{ inputs.num-ranks || 4 }}
           mpi-impl: ${{ inputs.mpi-impl || 'mpich' }}
-          run-duration: '0_02:36:00'
+          run-duration: ${{ needs.prepare.outputs.ect-run-duration }}
           run-timeout: '45'
           restart-file: spinup-restart.nc
 
@@ -320,9 +341,12 @@ jobs:
       - name: Collect metadata
         id: meta
         run: |
-          source .github/ci-config.env
+          ECT_SUMMARY_FILE="${{ needs.prepare.outputs.ect-summary-file }}"
+          ECT_RESOLUTION="${{ needs.prepare.outputs.ect-resolution }}"
+          ECT_PERTURB_MAGNITUDE="${{ needs.prepare.outputs.ect-perturb-magnitude }}"
+          ECT_PERTURB_VARIABLE="${{ needs.prepare.outputs.ect-perturb-variable }}"
+          RUN_DURATION="${{ needs.prepare.outputs.ect-run-duration }}"
           ECT_SUMMARY_PREFIX="${ECT_SUMMARY_FILE%.nc}"
-          RUN_DURATION=0_02:36:00
           VERSION="${{ needs.build.outputs.mpas-version }}"
           DATE=$(date -u +%Y-%m-%d)
           SUMMARY_NAME="${ECT_SUMMARY_PREFIX}_v${VERSION}_${DATE//-/}.nc"
@@ -470,7 +494,7 @@ jobs:
   # Auto-creates the release (tagged by version series) if it doesn't exist.
   #===========================================================================
   publish-restart:
-    needs: [build, spinup]
+    needs: [prepare, build, spinup]
     name: Publish Restart
     runs-on: ubuntu-latest
     permissions:
@@ -504,7 +528,7 @@ jobs:
               --notes "ECT ensemble summary and spin-up restart shared by all MPAS v${SERIES}.x releases. Generated from v${VERSION}. Updated automatically by the ect-ensemble-gen workflow."
           fi
 
-          RESTART_NAME="${ECT_RESTART_FILE}"
+          RESTART_NAME="${{ needs.prepare.outputs.ect-restart-file }}"
           mv spinup-restart.nc "${RESTART_NAME}"
 
           echo "Compressing ${RESTART_NAME} ($(du -h "${RESTART_NAME}" | cut -f1))..."
@@ -522,7 +546,7 @@ jobs:
   # Auto-creates the release (tagged by version series) if it doesn't exist.
   #===========================================================================
   publish-summary:
-    needs: [build, generate-summary]
+    needs: [prepare, build, generate-summary]
     if: needs.generate-summary.result == 'success'
     name: Publish Summary
     runs-on: ubuntu-latest

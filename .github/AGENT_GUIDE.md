@@ -208,7 +208,7 @@ Key constraints:
 - **Spin-up restart**: cold-start `init.nc` has zero hydrometeors. Ensemble generation runs 24h unperturbed first, then perturbs from the restart.
 - **PyCECT minimum members**: ensemble size must be >= number of output variables (~48). Default: 200.
 - **Time slice**: `run-perturb-mpas` invokes `trim_history.py` with `--tslice (Time.size - 1)`, producing files with exactly **one** time dimension (`Time=1`). PyCECT (`pyCECT.py` and `pyEnsSumMPAS.py`) is then called with `--tslice 0` — the only valid index in a single-slice file. There is no `ECT_TSLICE` knob in `ci-config.env`; changing the effective slice would require editing `run-perturb-mpas` (not config). Slice 0 in a cold-start (untrimmed) run is the unintegrated initial state, which is why we trim before validation.
-- ECT parameters and paths in `.github/ci-config.env` (`ECT_*`, `ECT_EXCLUDED_VARS`, `PYCECT_TAG`); the ECT release tag itself is derived at runtime from `Registry.xml` via the `mpas-version` composite action.
+- Per-case ECT parameters (archive, durations, perturbation, summary/restart names, excluded variables) are in `.github/ect-cases.yml`; PyCECT tag/commit stay in `.github/ci-config.env` (`PYCECT_*`); the ECT release tag itself is derived at runtime from `Registry.xml`.
 
 ## Shell Scripting Notes
 
@@ -233,3 +233,11 @@ Workflows accept `mpas-repository` and `mpas-ref` inputs for testing upstream MP
 
 - **NVHPC+OpenMPI**: model exits 134 (SIGABRT) on GA runners with 4 ranks. MPICH works. Caller workflows and reusable CPU/GPU jobs mark this combination `continue-on-error` until resolved.
 - **NVHPC/Intel MPI F08 bindings**: broken with hpcdev MPI libraries. Both use `MPAS_MPI_F08=0` workaround.
+
+### ECT cases (`.github/ect-cases.yml`)
+
+One table lists the ECT cases: `default` (used when a workflow's `ect-case` input is empty), `defaults` (shared values) and `cases`
+(per-case fields such as `summary-file`, `restart-file`, `resolution`, durations, perturbation; quote durations and magnitudes, YAML reads
+unquoted `1_00:00:00` as a number). Each workflow resolves its case once in its config job (`resolve-ect-case` action) and passes the
+values on as inputs. Run a case by typing its name into the `ect-case` input of `ect-test.yml` (or `ect-ensemble-gen.yml` to build its
+reference). A new case needs its own summary and restart assets in the ECT release. Results record the case in an `ect-case` column.
