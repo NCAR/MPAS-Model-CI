@@ -1,0 +1,54 @@
+name: 'Resolve ECT case'
+description: >
+  Resolve one ECT case from .github/ect-cases.yml (defaults merged with the case) into explicit outputs. Run it in a workflow's
+  config job (the repository must be checked out) and pass the outputs on as inputs; nothing is read from the environment.
+
+inputs:
+  ect-case:
+    description: 'ECT case name (a key under `cases` in .github/ect-cases.yml). Empty = the table default.'
+    required: false
+    default: ''
+
+outputs:
+  case:
+    description: 'Resolved case name'
+    value: ${{ steps.resolve.outputs.case }}
+  resolution:
+    description: 'Test archive name (<resolution>.tar.gz, RELEASE_TESTDATA_<RES> in ci-config.env)'
+    value: ${{ steps.resolve.outputs.resolution }}
+  summary-file:
+    description: 'Ensemble summary release asset name'
+    value: ${{ steps.resolve.outputs.summary-file }}
+  restart-file:
+    description: 'Spin-up restart release asset name (stored gzipped)'
+    value: ${{ steps.resolve.outputs.restart-file }}
+  spinup-duration:
+    description: 'Spin-up duration (config_run_duration format)'
+    value: ${{ steps.resolve.outputs.spinup-duration }}
+  run-duration:
+    description: 'Duration of each ensemble/test member (config_run_duration format)'
+    value: ${{ steps.resolve.outputs.run-duration }}
+  ensemble-size:
+    description: 'Reference ensemble size'
+    value: ${{ steps.resolve.outputs.ensemble-size }}
+  perturb-variable:
+    description: 'Perturbed initial-condition variable'
+    value: ${{ steps.resolve.outputs.perturb-variable }}
+  perturb-magnitude:
+    description: 'Perturbation magnitude'
+    value: ${{ steps.resolve.outputs.perturb-magnitude }}
+  excluded-vars:
+    description: 'Path (relative to the repo root) of the excluded-variables file'
+    value: ${{ steps.resolve.outputs.excluded-vars }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve ECT case
+      id: resolve
+      shell: bash
+      env:
+        ECT_CASE_INPUT: ${{ inputs.ect-case }}
+      run: |
+        python3 -c "import yaml" 2>/dev/null || python3 -m pip install --quiet pyyaml
+        python3 "${GITHUB_WORKSPACE}/.github/scripts/resolve-ect-case.py" --case "${ECT_CASE_INPUT}" | tee -a "${GITHUB_OUTPUT}"

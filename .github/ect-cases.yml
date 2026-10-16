@@ -1,0 +1,35 @@
+# ECT cases: one table, read by .github/actions/resolve-ect-case.
+#
+# A case = one ECT configuration (test archive, run lengths, perturbation, and the names of its
+# ensemble-summary and spin-up-restart release assets). Fields not set on a case come from `defaults`. Nothing here overrides
+# ci-config.env: containers, compilers, MPI flags, PyCECT version and test-data release tags stay in ci-config.env.
+# Workflows take an `ect-case` input (empty = `default`), resolve it once in their config job, and pass the resolved values on
+# as explicit inputs/outputs.
+#
+# Fields
+#   description         free text
+#   resolution          test-archive name; must have RELEASE_TESTDATA_<RES> in ci-config.env (the archive is <resolution>.tar.gz)
+#   summary-file        ensemble summary asset in the ECT release (ect-v{MAJOR.MINOR}); give each case its own name
+#   restart-file        spin-up restart asset in the ECT release (stored gzipped as <restart-file>.gz)
+#   spinup-duration     (QUOTE durations and magnitudes) unperturbed spin-up before the ensemble is perturbed (config_run_duration format)
+#   run-duration        length of each (perturbed) member
+#   ensemble-size       reference ensemble size (must be >= number of analysed variables; ~48 minimum)
+#   perturb-variable    initial-condition variable perturbed (O(1e-14), needs double precision)
+#   perturb-magnitude
+#   excluded-vars       file listing history variables dropped before PyCECT
+default: mesoscale_reference
+
+defaults:
+  resolution: 120km
+  spinup-duration: "1_00:00:00"       # quote durations: unquoted 1_00:00:00 would be read as a base-60 number
+  run-duration: "0_02:36:00"
+  ensemble-size: 200
+  perturb-variable: theta
+  perturb-magnitude: "1e-14"
+  excluded-vars: .github/data/ect_excluded_vars.txt
+
+cases:
+  mesoscale_reference:
+    description: 120km global mesh, mesoscale_reference physics suite as shipped in the archive's namelist
+    summary-file: mpas_ect_summary_120km.nc
+    restart-file: 120km-spinup-restart.nc

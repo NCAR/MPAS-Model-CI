@@ -9,7 +9,7 @@ PyCECT requires three area-weighting variables (areaCell, dvEdge,
 areaTriangle) to compute global means. These static variables are
 preserved even though they lack a Time dimension.
 
-The ECT exclusion list path is configured via ECT_EXCLUDED_VARS in ci-config.env
+The ECT exclusion list path comes from the ECT case (excluded-vars in .github/ect-cases.yml)
 and passed via --exclude-file.
 
 Usage:
