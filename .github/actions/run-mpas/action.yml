@@ -49,7 +49,7 @@ inputs:
   gpu-aware-mpi:
     description: >
       Use GPU-aware MPI halo exchanges: sets config_gpu_aware_mpi = .true. in the namelist and the MPI library's
-      GPU-support environment (MPICH_GPU_SUPPORT_ENABLED / OpenMPI UCX-CUDA). GPU (OpenACC) builds only, and only in
+      GPU-support environment (MPICH_GPU_SUPPORT_ENABLED / MPIR_CVAR_ENABLE_GPU for MPICH; nothing extra for OpenMPI, which is CUDA-aware by default). GPU (OpenACC) builds only, and only in
       containers whose MPI is built with CUDA support. Default false; the GPU test workflows pass true.
     required: false
     default: 'false'
