@@ -33,6 +33,12 @@ inputs:
     description: 'MPI implementation (openmpi, mpich)'
     required: false
     default: 'openmpi'
+  gpu-aware-mpi:
+    description: >
+      Use GPU-aware MPI halo exchanges (config_gpu_aware_mpi = .true. in each member's namelist plus the MPI
+      library's GPU-support environment). GPU builds in containers with CUDA-enabled MPI only. Default false.
+    required: false
+    default: 'false'
   output-dir:
     description: 'Directory to collect trimmed history files'
     required: false
@@ -112,6 +118,10 @@ runs:
         if [ "${MPI_IMPL}" = "openmpi" ]; then
           MPI_FLAGS="${OPENMPI_RUN_FLAGS:---allow-run-as-root --oversubscribe}"
         fi
+        GPU_AWARE_MPI="${{ inputs.gpu-aware-mpi }}"
+        if [ "${GPU_AWARE_MPI}" = "true" ]; then
+          source "${GITHUB_WORKSPACE}/.github/scripts/gpu-aware-mpi-env.sh"
+        fi
 
         EXCLUDE_FILE=""
         if [ -n "${ECT_EXCLUDED_VARS}" ]; then
@@ -180,6 +190,10 @@ runs:
           sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${RUN_DURATION}'/" namelist.atmosphere
           sed -i '/<immutable_stream name="restart"/,/\/>/ s/output_interval="[^"]*"/output_interval="none"/' streams.atmosphere
           sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${RUN_DURATION}"'"/' streams.atmosphere
+
+          if [ "${GPU_AWARE_MPI}" = "true" ]; then
+            "${GITHUB_WORKSPACE}/.github/scripts/enable-gpu-aware-mpi.sh" namelist.atmosphere
+          fi
 
           echo "[$(date +%H:%M:%S)] Running MPAS-A (${RUN_DURATION}, ${NRANKS} ranks)..."
           set +e

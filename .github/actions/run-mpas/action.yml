@@ -46,6 +46,13 @@ inputs:
       regardless of mpi-impl.
     required: false
     default: ''
+  gpu-aware-mpi:
+    description: >
+      Use GPU-aware MPI halo exchanges: sets config_gpu_aware_mpi = .true. in the namelist and the MPI library's
+      GPU-support environment (MPICH_GPU_SUPPORT_ENABLED / MPIR_CVAR_ENABLE_GPU for MPICH; nothing extra for OpenMPI, which is CUDA-aware by default). GPU (OpenACC) builds only, and only in
+      containers whose MPI is built with CUDA support. Default false; the GPU test workflows pass true.
+    required: false
+    default: 'false'
 
 outputs:
   log-dir:
@@ -114,6 +121,12 @@ runs:
         echo "=== Namelist ==="
         grep config_run_duration namelist.atmosphere
 
+    - name: Enable GPU-aware MPI halos
+      if: ${{ inputs.gpu-aware-mpi == 'true' }}
+      shell: bash
+      working-directory: ${{ steps.config.outputs.workdir }}
+      run: ${GITHUB_WORKSPACE}/.github/scripts/enable-gpu-aware-mpi.sh namelist.atmosphere
+
     - name: Run MPAS-A
       id: run
       shell: bash
@@ -149,6 +162,10 @@ runs:
           MPI_FLAGS="${MPI_FLAGS} ${{ inputs.mpi-run-flags }}"
         fi
 
+        if [ "${{ inputs.gpu-aware-mpi }}" = "true" ]; then
+          source "${GITHUB_WORKSPACE}/.github/scripts/gpu-aware-mpi-env.sh"
+        fi
+
         ulimit -s unlimited 2>/dev/null || echo "Warning: Could not set unlimited stack size"
 
         echo "=== Run configuration ==="
@@ -156,6 +173,7 @@ runs:
         echo "  Processors: ${{ inputs.num-procs }}"
         echo "  MPI_IMPL: ${MPI_IMPL:-auto}"
         echo "  MPI_FLAGS: ${MPI_FLAGS}"
+        echo "  GPU-aware MPI: ${{ inputs.gpu-aware-mpi }}"
         echo "  Stack limit: $(ulimit -s)"
         echo "  Available CPUs: $(nproc 2>/dev/null || echo unknown)"
         echo "  Available RAM: $(free -m 2>/dev/null | awk '/^Mem:/{print $2 "MB"}' || echo unknown)"
