@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compare the first history file of a reference run dir against one or more test run dirs.
+# Compare the last history file (end of run) of a reference run dir against one or more test run dirs.
 # cmp first (instant); fall back to the data-level NetCDF comparison used by the GitHub CI.
 help() { echo "./compare_bfb.sh -c <compare-bfb-nc.py> -p <python> <ref run dir> <test run dir> [...]"; }
 while getopts c:p:h opt; do
@@ -14,12 +14,12 @@ shift $((OPTIND - 1))
 ref_dir=$1; shift
 [ -n "$ref_dir" ] && [ $# -gt 0 ] || { help; exit 1; }
 
-ref=$(ls "$ref_dir"/history.*.nc 2>/dev/null | head -1)
+ref=$(ls "$ref_dir"/history.*.nc 2>/dev/null | tail -1)
 [ -n "$ref" ] || { echo "No reference history file in $ref_dir"; exit 1; }
 
 fail=0
 for dir in "$@"; do
-  test_file=$(ls "$dir"/history.*.nc 2>/dev/null | head -1)
+  test_file=$(ls "$dir"/history.*.nc 2>/dev/null | tail -1)
   if [ -z "$test_file" ]; then echo "$dir: history file missing"; fail=1; continue; fi
   if cmp -s "$ref" "$test_file"; then echo "$dir: byte-identical"; continue; fi
   out=$("$python" "$compare_py" "$ref" "$test_file"); rc=$?
