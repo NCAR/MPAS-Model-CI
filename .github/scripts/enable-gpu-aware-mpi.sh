@@ -10,13 +10,14 @@ import re, sys
 from pathlib import Path
 p = Path(sys.argv[1])
 text = p.read_text()
-if re.search(r"^\s*&development\b", text, flags=re.MULTILINE):
+if re.search(r"^\s*&development\b", text, flags=re.MULTILINE | re.IGNORECASE):
     def edit(m):
         block = m.group(0)
-        if re.search(r"config_gpu_aware_mpi\s*=", block):
-            return re.sub(r"config_gpu_aware_mpi\s*=\s*\.\w+\.", "config_gpu_aware_mpi = .true.", block)
+        assignment = r"^([^!\n]*\bconfig_gpu_aware_mpi\s*=\s*)\.\w+\."
+        if re.search(assignment, block, flags=re.MULTILINE | re.IGNORECASE):
+            return re.sub(assignment, r"\1.true.", block, flags=re.MULTILINE | re.IGNORECASE)
         return re.sub(r"(\n\s*/\s*)$", r"\n    config_gpu_aware_mpi = .true.\1", block, count=1)
-    text = re.sub(r"^\s*&development\b[\s\S]*?\n\s*/\s*", edit, text, count=1, flags=re.MULTILINE)
+    text = re.sub(r"^\s*&development\b[\s\S]*?\n\s*/\s*", edit, text, count=1, flags=re.MULTILINE | re.IGNORECASE)
 else:
     text = text.rstrip() + "\n&development\n    config_gpu_aware_mpi = .true.\n/\n"
 p.write_text(text)
