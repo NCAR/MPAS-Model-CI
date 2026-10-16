@@ -39,6 +39,11 @@ if [ -z "$part" ]; then
 fi
 [ -n "$duration" ] && sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${duration}'/" namelist.atmosphere
 grep config_run_duration namelist.atmosphere
+# Some case archives ship with history output off; write one history file at the end of the run
+if [ -n "$duration" ]; then
+  sed -i '/<stream name="output"/,/>/ s/output_interval="[^"]*"/output_interval="'"${duration}"'"/' streams.atmosphere
+  grep -A5 '<stream name="output"' streams.atmosphere | grep output_interval
+fi
 
 mpiexec -n "$ranks" ./atmosphere_model
 rc=$?
