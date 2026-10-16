@@ -1,0 +1,62 @@
+# PROTOTYPE: run the SANE-based MPAS-A tests (.sane/mpas) on Derecho.
+# SANE submits each build/run to PBS from the Derecho runner and tracks the DAG;
+# see .sane/mpas/README.md.
+#
+# Security: self-hosted runner => workflow_dispatch only, never push/pull_request
+# (same policy as test-gpu-*.yml).
+#
+# Like the CIRRUS callers, this file must exist on the default branch (a minimal
+# stub is fine) before it can be dispatched against a feature branch.
+
+name: "SANE: MPAS-A on Derecho"
+run-name: "SANE ${{ inputs.actions }} (${{ inputs.ref }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      actions:
+        description: 'JSON list of SANE action ids to run'
+        required: false
+        default: '["bfb_decomp_gnu"]'
+        type: string
+      dry_run:
+        description: 'Dry-run only (builds PBS submissions, runs nothing)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  sane:
+    name: SANE (${{ inputs.actions }})
+    # Replace with the actual label of the Derecho self-hosted runner
+    runs-on: derecho
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      # islas/sane-workflows-action v1.2.1 (commit pinned, not the floating tag)
+      - uses: islas/sane-workflows-action@43070d332292f898079fba2d716fca47123771d5
+        with:
+          id: sane-mpas
+          paths: '[".sane/"]'
+          host: derecho
+          actions: ${{ inputs.actions }}
+          dry_run: ${{ inputs.dry_run }}
+          patch: |
+            [
+              {
+                "priority" : -99,
+                "hosts" :
+                {
+                  "[.*derecho.*]" :
+                  {
+                    "job_suffix" : ".sane-mpas.${{ github.run_id }}"
+                  }
+                }
+              }
+            ]

@@ -1,0 +1,51 @@
+{
+  "patches":
+  [
+    {
+      "hosts":
+      {
+        "derecho":
+        {
+          "default_env" : "gnu",
+          "environments" :
+          {
+            // Load compiler + MPI + I/O libs in ONE load so Lmod cannot swap the compiler back
+            "gnu" :
+            {
+              "aliases" : [ "gcc" ],
+              "lmod_cmds" :
+              [
+                { "cmd" : "purge" },
+                { "cmd" : "load", "args" : [ "ncarenv/25.10", "gcc/14.3.0", "cray-mpich", "ncarcompilers", "netcdf-mpi", "parallel-netcdf" ] }
+              ]
+            },
+            "intel-oneapi" :
+            {
+              "aliases" : [ "oneapi", "intel" ],
+              "lmod_cmds" :
+              [
+                { "cmd" : "purge" },
+                { "cmd" : "load", "args" : [ "ncarenv/25.10", "intel/2025.3.2", "cray-mpich", "ncarcompilers", "netcdf-mpi", "parallel-netcdf" ] }
+              ]
+            },
+            "nvhpc" :
+            {
+              "lmod_cmds" :
+              [
+                { "cmd" : "purge" },
+                { "cmd" : "load", "args" : [ "ncarenv/25.10", "nvhpc/26.1", "cray-mpich", "ncarcompilers", "netcdf-mpi", "parallel-netcdf" ] }
+              ]
+            }
+          }
+        }
+      },
+      "actions" :
+      {
+        "[build_.*]" : { "resources" : { "derecho" : { "cpus" : 8, "memory" : "16gb", "timelimit" : "00:30:00" } } },
+        "[build_.*intel.*]" : { "resources" : { "derecho" : { "timelimit" : "00:45:00" } } },
+        // 120km, 1 h simulated: a few minutes at 4 ranks; leave leeway until measured
+        "[bfb_decomp_.*_r[0-9]+]" : { "resources" : { "derecho" : { "memory" : "32gb", "timelimit" : "00:20:00" } } }
+      }
+    }
+  ]
+}

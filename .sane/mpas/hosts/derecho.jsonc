@@ -1,0 +1,55 @@
+{
+  "hosts" :
+  {
+    "derecho" :
+    {
+      "type" : "PBSHost",
+      "resources" :
+      {
+        // develop queue: short builds/tests, priority over main
+        "cpudev" :
+        {
+          "nodes" : 1,
+          "exclusive" : false,
+          "queues" : [ "develop" ],
+          "resources" : { "cpus" : 256, "memory" : "235gb" }
+        },
+        "cpu" :
+        {
+          "nodes" : 20,
+          "exclusive" : true,
+          "queues" : [ "main" ],
+          "resources" : { "cpus" : 128, "memory" : "256gb" }
+        }
+      },
+      "local_resources" :
+      {
+        // prevent thrashing of the login nodes
+        "cpus" : 4
+      },
+      "base_env" :
+      {
+        "lmod_path" : "/glade/u/apps/derecho/25.10/spack/opt/spack/lmod/8.7.55/gcc/12.5.0/uncg/lmod/lmod/init/env_modules_python.py",
+        "env_scripts" : [ "/etc/profile.d/z00_modules.sh" ]
+      },
+      "mapping" :
+      {
+        "ncpus" : [ "cpu", "cpus", "ncpu" ],
+        "mem" : [ "memory" ]
+      },
+      // Override per run with a host patch (-p <dir>) rather than editing here
+      "account" : "NTDD0005",
+      "config" :
+      {
+        "mpas" :
+        {
+          // Where the 120km test case (x1.40962.*, part.4/36/128) is expected
+          "testdata_120km" : "/glade/derecho/scratch/cmille73/MPAS_ECT/120km",
+          "testdata_120km_url" : "https://github.com/NCAR/MPAS-Model-CI/releases/download/testdata-120km-v2/120km.tar.gz",
+          // Python with netCDF4 + numpy, only needed if `cmp` says histories differ
+          "python" : "/glade/derecho/scratch/cmille73/MPAS_CI/venv-bfb/bin/python3"
+        }
+      }
+    }
+  }
+}
