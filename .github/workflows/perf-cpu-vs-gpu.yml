@@ -14,6 +14,11 @@ name: "Perf: CPU vs GPU (NVHPC)"
 on:
   workflow_dispatch:
     inputs:
+      gpu_aware_mpi:
+        description: 'Use GPU-aware MPI halo exchanges on the GPU (OpenACC) runs. Needs CUDA-enabled MPI in the container; set false to fall back to host-staged halos.'
+        required: false
+        type: boolean
+        default: true
       mpi:
         description: MPI implementation
         required: true
@@ -62,6 +67,7 @@ jobs:
   perf:
     uses: ./.github/workflows/_test-perf.yml
     with:
+      gpu-aware-mpi: ${{ inputs.gpu_aware_mpi }}
       mpi: ${{ inputs.mpi }}
       precision: ${{ inputs.precision }}
       resolution: ${{ inputs.resolution }}

@@ -5,11 +5,18 @@ name: "BFB: I/O GPU (SMIOL vs PIO)"
 
 on:
   workflow_dispatch:
+    inputs:
+      gpu_aware_mpi:
+        description: 'Use GPU-aware MPI halo exchanges on the GPU (OpenACC) runs. Needs CUDA-enabled MPI in the container; set false to fall back to host-staged halos.'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   test:
     uses: ./.github/workflows/_test-bfb.yml
     with:
+      gpu-aware-mpi: ${{ inputs.gpu_aware_mpi }}
       compiler: nvhpc
       mpi: mpich
       gpu: 'true'
