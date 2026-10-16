@@ -28,6 +28,11 @@ on:
         description: 'MPI implementation for the container image (mpich, openmpi)'
         required: true
         type: string
+      gpu-aware-mpi:
+        description: 'Use GPU-aware MPI halo exchanges on the GPU (OpenACC) runs (config_gpu_aware_mpi + MPI GPU-support env). Needs CUDA-enabled MPI in the container; set false to fall back to host-staged halos.'
+        required: false
+        type: boolean
+        default: true
       variants:
         description: >
           JSON array of at least two variant objects. Required per variant: id (unique slug),
@@ -276,6 +281,7 @@ jobs:
           mpi-impl: ${{ inputs.mpi }}
           working-dir: run-${{ matrix.id }}
           strict-exit-check: 'false'
+          gpu-aware-mpi: ${{ matrix.openacc && inputs.gpu-aware-mpi }}
 
       - name: Upload history output
         uses: actions/upload-artifact@v6

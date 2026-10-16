@@ -17,6 +17,11 @@ on:
         description: 'MPI implementation (mpich, openmpi)'
         required: true
         type: string
+      gpu-aware-mpi:
+        description: 'Use GPU-aware MPI halo exchanges on the GPU (OpenACC) runs (config_gpu_aware_mpi + MPI GPU-support env). Needs CUDA-enabled MPI in the container; set false to fall back to host-staged halos.'
+        required: false
+        type: boolean
+        default: true
       # Cross-repo inputs disabled until NCAR security review of running
       # external code on self-hosted CIRRUS runners is complete.
       # mpas-repository:
@@ -199,6 +204,7 @@ jobs:
           run-duration: '0_02:36:00'
           run-timeout: '45'
           restart-file: ${{ steps.restart.outputs.available == 'true' && steps.restart.outputs.file || '' }}
+          gpu-aware-mpi: ${{ inputs.gpu-aware-mpi }}
 
       - name: Upload history file
         uses: actions/upload-artifact@v6
