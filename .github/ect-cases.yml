@@ -17,6 +17,10 @@
 #   perturb-variable    initial-condition variable perturbed (O(1e-14), needs double precision)
 #   perturb-magnitude
 #   excluded-vars       file listing history variables dropped before PyCECT
+# Asset naming: summary `mpas_ect_summary_<resolution>_<case>.nc`, restart `<resolution>-<case>-spinup-restart.nc`.
+# Legacy: before cases existed the default case used `mpas_ect_summary_120km.nc` and `120km-spinup-restart.nc.gz` on the ECT
+# releases. Those files are left in place, frozen at the versions of 2026-10-17, for forks of this repo that still read them;
+# nothing here reads or writes them.
 default: mesoscale_reference
 
 defaults:
@@ -31,5 +35,5 @@ defaults:
 cases:
   mesoscale_reference:
     description: 120km global mesh, mesoscale_reference physics suite as shipped in the archive's namelist
-    summary-file: mpas_ect_summary_120km.nc
-    restart-file: 120km-spinup-restart.nc
+    summary-file: mpas_ect_summary_120km_mesoscale_reference.nc
+    restart-file: 120km-mesoscale_reference-spinup-restart.nc
