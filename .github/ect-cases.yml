@@ -8,7 +8,7 @@
 #
 # Fields
 #   description         free text
-#   resolution          test-archive name; must have RELEASE_TESTDATA_<RES> in ci-config.env (the archive is <resolution>.tar.gz)
+#   resolution          test-archive name; must be a key under `data` (the archive is <resolution>.tar.gz)
 #   summary-file        ensemble summary asset in the ECT release (ect-v{MAJOR.MINOR}); give each case its own name
 #   restart-file        spin-up restart asset in the ECT release (stored gzipped as <restart-file>.gz)
 #   spinup-duration     (QUOTE durations and magnitudes) unperturbed spin-up before the ensemble is perturbed (config_run_duration format)
@@ -22,6 +22,14 @@
 # releases. Those files are left in place, frozen at the versions of 2026-10-17, for forks of this repo that still read them;
 # nothing here reads or writes them.
 default: mesoscale_reference
+
+# Test data: named, versioned release assets on DATA_REPOSITORY (ci-config.env). The key is the archive's base name
+# (<key>.tar.gz), which is also what the `resolution` input of download-testdata and the `resolution` field of a case refer to.
+# A released tag is never replaced (the CI cache key is the tag): publish a new version and change `tag` here.
+# To add data: gh release create <tag> <key>.tar.gz --repo NCAR/MPAS-Model-CI, then add `<key>: {tag: <tag>}`.
+data:
+  120km: {tag: testdata-120km-v2}
+  240km: {tag: testdata-240km-v3}
 
 defaults:
   resolution: 120km

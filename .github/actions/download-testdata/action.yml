@@ -3,7 +3,7 @@ description: 'Download and extract an MPAS test case archive from GitHub release
 
 inputs:
   resolution:
-    description: 'Test case resolution (e.g., 240km, 120km). Used to look up RELEASE_TESTDATA_{RES} in ci-config.env.'
+    description: 'Test case resolution (e.g., 240km, 120km). Names the test-data archive: its release tag is looked up under `data` in .github/ect-cases.yml.'
     required: true
   dest-dir:
     description: 'Destination directory name for the extracted test case'
@@ -32,14 +32,10 @@ runs:
         fi
         source "${CI_CONFIG}"
 
-        RES_UPPER=$(echo "${RESOLUTION}" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
-        TAG_VAR="RELEASE_TESTDATA_${RES_UPPER}"
-        TAG="${!TAG_VAR}"
-
-        if [ -z "${TAG}" ]; then
-          echo "::error::No release tag for resolution '${RESOLUTION}'. Add ${TAG_VAR}= to ci-config.env."
-          exit 1
-        fi
+        python3 -c "import yaml" 2>/dev/null || python3 -m pip install --quiet pyyaml
+        DATA_INFO=$(python3 "${GITHUB_WORKSPACE}/.github/scripts/resolve-ect-case.py" --data "${RESOLUTION}")
+        TAG=$(echo "${DATA_INFO}" | sed -n 's/^tag=//p')
+        ARCHIVE=$(echo "${DATA_INFO}" | sed -n 's/^asset=//p')
 
         REPO="${DATA_REPOSITORY:-${GITHUB_REPOSITORY}}"
         URL="https://github.com/${REPO}/releases/download/${TAG}/${ARCHIVE}"
@@ -47,7 +43,7 @@ runs:
         echo "release-tag=${TAG}" >> $GITHUB_OUTPUT
         echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT
         echo "url=${URL}" >> $GITHUB_OUTPUT
-        echo "Resolved: ${TAG_VAR}=${TAG} → ${URL}"
+        echo "Resolved: data ${RESOLUTION} → ${TAG} → ${URL}"
 
     - name: Cache test case archive
       id: cache

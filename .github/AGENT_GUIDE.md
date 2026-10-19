@@ -58,9 +58,9 @@ tests/                           # pFUnit test infrastructure (repo root)
 
 Test case archives, ECT ensemble summary files, and ECT spin-up restarts are stored as **GitHub release assets on this repository** (`NCAR/MPAS-Model-CI`). Each asset is versioned by its own release tag (independent of the others).
 
-Current tags: `testdata-240km-v1`, `testdata-120km-v1` (see `RELEASE_TESTDATA_*` in `ci-config.env`), plus `ect-v{MAJOR.MINOR}` for ECT data — its tag is derived at runtime from `src/core_atmosphere/Registry.xml` via the `mpas-version` composite action, not from `ci-config.env`. One ECT release serves every patch release in a series (`ect-v8.4` covers 8.4.0, 8.4.1, 8.4.2, …), so a hotfix version bump does not require regenerating the 200-member ensemble.
+Test-data archives and their release tags are listed under `data` in `.github/ect-cases.yml` (e.g. `120km` → `testdata-120km-v2`), plus `ect-v{MAJOR.MINOR}` for ECT data — its tag is derived at runtime from `src/core_atmosphere/Registry.xml` via the `mpas-version` composite action, not from `ci-config.env`. One ECT release serves every patch release in a series (`ect-v8.4` covers 8.4.0, 8.4.1, 8.4.2, …), so a hotfix version bump does not require regenerating the 200-member ensemble.
 
-**Adding a new test case:** build the archive (`{resolution}.tar.gz`), create a release (`gh release create … --repo NCAR/MPAS-Model-CI`), attach the asset, then set `RELEASE_TESTDATA_{RES}` in `ci-config.env` (resolution uppercased with `-` → `_` in the variable name, e.g. `120KM`).
+**Adding a new test case:** build the archive (`{resolution}.tar.gz`), create a release (`gh release create … --repo NCAR/MPAS-Model-CI`), attach the asset, then add `<resolution>: {tag: <release tag>}` under `data` in `.github/ect-cases.yml`. Never replace an existing tag's asset (the cache key is the tag); publish a new version and update the entry.
 
 `namelist.atmosphere` inside each archive carries model defaults; workflows override only what they need.
 
@@ -126,8 +126,7 @@ Key settings:
 - `MAKE_TARGET_{compiler}` — maps CI names to Makefile targets
 - `NVHPC_EXTRA_MAKE_FLAGS` / `ONEAPI_EXTRA_MAKE_FLAGS` — compiler-specific build workarounds
 - `OPENMPI_RUN_FLAGS` — extra `mpirun` flags for OpenMPI in containers (root + oversubscribe). MPICH needs no equivalent. Comment in `ci-config.env` lists the consumer sites for adding analogous flags later.
-- `RELEASE_TESTDATA_{RES}` — GitHub release tag for `{resolution}.tar.gz` test archives (`RES` uppercased, `-` → `_`)
-- `ECT_*` — ECT resolution, perturbation, summary/restart filenames, excluded-vars path, etc.
+- `DATA_REPOSITORY` — repository hosting the release assets (forks leave it pointing at NCAR/MPAS-Model-CI). Test-data release tags and per-case ECT settings are in `.github/ect-cases.yml`, not here.
 - The ECT release tag (`ect-v{MAJOR.MINOR}`) is **not** stored here; it is derived at runtime from `src/core_atmosphere/Registry.xml` by the `mpas-version` composite action (see below). This guarantees the writer (`ect-ensemble-gen.yml`) and readers (`_test-compiler.yml`, `_test-gpu.yml`, `ect-test.yml`, `validate-ect`) can never drift apart. Because the tag drops the patch component, patch releases within a series share one ensemble.
 - `PYCECT_TAG` — PyCECT git tag for `validate-ect`
 - `BFB_*` — default resolution, duration, and run timeout for bit-for-bit workflows; per-variant overrides live in the `variants` JSON passed to `_test-bfb.yml`
@@ -179,7 +178,7 @@ Resolves a container image name from `ci-config.env` templates. Accepts `compile
 Handles cross-repo checkout: checks out MPAS source, then overlays `.github/` from MPAS-Model-CI if testing an external repo.
 
 ### download-testdata
-Takes `resolution`, looks up `RELEASE_TESTDATA_{RES}` in `ci-config.env`, downloads `{resolution}.tar.gz` from this repo’s GitHub releases (with `actions/cache`), and extracts the archive.
+Takes `resolution`, looks up the archive's release tag under `data` in `.github/ect-cases.yml` (via `resolve-ect-case.py --data`), downloads `{resolution}.tar.gz` from this repo’s GitHub releases (with `actions/cache`), and extracts the archive.
 
 ### run-mpas
 Runs a standard MPAS-A case: uses `download-testdata`, copies the extracted tree into the run working directory, and starts the model. No longer sources per-case `test-cases/…/config.env`; optional `run-duration` / `restart-interval` override namelist defaults from the archive.

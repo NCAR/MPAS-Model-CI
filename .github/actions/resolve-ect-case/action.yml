@@ -14,7 +14,7 @@ outputs:
     description: 'Resolved case name'
     value: ${{ steps.resolve.outputs.case }}
   resolution:
-    description: 'Test archive name (<resolution>.tar.gz, RELEASE_TESTDATA_<RES> in ci-config.env)'
+    description: 'Test archive name (<resolution>.tar.gz, a key under `data` in ect-cases.yml)'
     value: ${{ steps.resolve.outputs.resolution }}
   summary-file:
     description: 'Ensemble summary release asset name'
