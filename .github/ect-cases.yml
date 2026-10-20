@@ -2,7 +2,7 @@
 #
 # A case = one ECT configuration (test archive, run lengths, perturbation, and the names of its
 # ensemble-summary and spin-up-restart release assets). Fields not set on a case come from `defaults`. Nothing here overrides
-# ci-config.env: containers, compilers, MPI flags, PyCECT version and test-data release tags stay in ci-config.env.
+# ci-config.env: containers, compilers, MPI flags, PyCECT version and the data repository stay in ci-config.env.
 # Workflows take an `ect-case` input (empty = `default`), resolve it once in their config job, and pass the resolved values on
 # as explicit inputs/outputs.
 #
