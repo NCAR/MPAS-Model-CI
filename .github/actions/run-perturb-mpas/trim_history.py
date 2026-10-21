@@ -12,6 +12,11 @@ preserved even though they lack a Time dimension.
 The ECT exclusion list path comes from the ECT case (excluded-vars in .github/ect-cases.yml)
 and passed via --exclude-file.
 
+Limited-area cases (--boundary-mask-file, a file with bdyMaskCell/Edge/Vertex such as the case's init.nc): the
+weights are set to zero wherever the mask is > 0 (relaxation and specified zones), so PyCECT's area-weighted means
+cover only the interior cells, which are not driven by the lateral boundary conditions. This works because PyCECT
+3.3.1 takes its weights from these variables in the history files; recheck when PYCECT_TAG changes.
+
 Usage:
     python3 trim_history.py input.nc output.nc --tslice -1 --exclude-file excluded_vars.txt
 """
@@ -27,7 +32,20 @@ import netCDF4 as nc
 PYCECT_REQUIRED_STATIC = {'areaCell', 'dvEdge', 'areaTriangle'}
 
 
-def trim_history(infile, outfile, tslice, exclude_vars=None):
+# weight variable -> limited-area boundary mask that zeroes it
+BOUNDARY_MASKS = {'areaCell': 'bdyMaskCell', 'dvEdge': 'bdyMaskEdge', 'areaTriangle': 'bdyMaskVertex'}
+
+
+def read_boundary_masks(mask_file):
+    with nc.Dataset(mask_file, 'r') as m:
+        missing = [v for v in BOUNDARY_MASKS.values() if v not in m.variables]
+        if missing:
+            print(f"ERROR: {mask_file} has no {', '.join(missing)} (not a limited-area file?)")
+            sys.exit(1)
+        return {w: m.variables[v][:] > 0 for w, v in BOUNDARY_MASKS.items()}
+
+
+def trim_history(infile, outfile, tslice, exclude_vars=None, boundary_masks=None):
     exclude = set(exclude_vars or [])
 
     with nc.Dataset(infile, 'r') as src, nc.Dataset(outfile, 'w', format='NETCDF4') as dst:
@@ -65,7 +83,16 @@ def trim_history(infile, outfile, tslice, exclude_vars=None):
         for name, var in keep_static.items():
             outvar = dst.createVariable(name, var.dtype, var.dimensions)
             outvar.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
-            outvar[:] = var[:]
+            values = var[:]
+            if boundary_masks is not None:
+                mask = boundary_masks[name]
+                if mask.shape != values.shape:
+                    print(f"ERROR: boundary mask for {name} has shape {mask.shape}, history has {values.shape}")
+                    sys.exit(1)
+                values[mask] = 0.0
+                outvar.setncattr('ect_boundary_mask', f'zeroed where {BOUNDARY_MASKS[name]} > 0')
+                print(f"  {name}: {int(mask.sum())} of {mask.size} boundary points get zero weight")
+            outvar[:] = values
             kept += 1
 
         # Write time-varying variables (extract single time slice, compress)
@@ -101,6 +128,8 @@ if __name__ == '__main__':
                         help='Time slice index to extract (negative counts from end, e.g. -1 = last)')
     parser.add_argument('--exclude-file',
                         help='File listing variable names to exclude')
+    parser.add_argument('--boundary-mask-file',
+                        help='Limited-area file with bdyMaskCell/Edge/Vertex; zero the weights of boundary points')
     args = parser.parse_args()
 
     exclude = []
@@ -109,4 +138,5 @@ if __name__ == '__main__':
             exclude = [line.strip() for line in f
                        if line.strip() and not line.startswith('#')]
 
-    trim_history(args.input, args.output, args.tslice, exclude)
+    masks = read_boundary_masks(args.boundary_mask_file) if args.boundary_mask_file else None
+    trim_history(args.input, args.output, args.tslice, exclude, masks)

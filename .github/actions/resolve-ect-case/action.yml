@@ -40,6 +40,9 @@ outputs:
   excluded-vars:
     description: 'Path (relative to the repo root) of the excluded-variables file'
     value: ${{ steps.resolve.outputs.excluded-vars }}
+  boundary-mask:
+    description: "'true' for limited-area cases whose boundary cells are left out of the PyCECT means"
+    value: ${{ steps.resolve.outputs.boundary-mask }}
 
 runs:
   using: 'composite'

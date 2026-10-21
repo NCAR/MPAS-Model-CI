@@ -53,6 +53,7 @@ jobs:
       ect-restart-file: ${{ steps.ectcase.outputs.restart-file }}
       ect-run-duration: ${{ steps.ectcase.outputs.run-duration }}
       ect-excluded-vars: ${{ steps.ectcase.outputs.excluded-vars }}
+      ect-boundary-mask: ${{ steps.ectcase.outputs.boundary-mask }}
       ect-perturb-magnitude: ${{ steps.ectcase.outputs.perturb-magnitude }}
       ect-case: ${{ steps.ectcase.outputs.case }}
     steps:
@@ -212,6 +213,7 @@ jobs:
         uses: ./.github/actions/run-perturb-mpas
         with:
           excluded-vars: ${{ needs.config.outputs.ect-excluded-vars }}
+          boundary-mask: ${{ needs.config.outputs.ect-boundary-mask }}
           perturb-magnitude: ${{ needs.config.outputs.ect-perturb-magnitude }}
           base-dir: base-case
           executable: ./atmosphere_model

@@ -4,7 +4,7 @@
 usage: resolve-ect-case.py [--case NAME] [--table PATH]      (empty/omitted case = the table's `default`)
        resolve-ect-case.py --data KEY                         (release tag and asset of a test-data archive: tag=..., asset=...)
 Output keys: case, resolution (the case's first data entry), summary-file, restart-file, spinup-duration, run-duration,
-ensemble-size, perturb-variable, perturb-magnitude, excluded-vars.
+ensemble-size, perturb-variable, perturb-magnitude, excluded-vars, boundary-mask (true/false).
 """
 import argparse, sys
 from pathlib import Path
@@ -49,12 +49,16 @@ out = {'case': name, 'resolution': d[0],
        'spinup-duration': e.get('spinup'), 'run-duration': e.get('run'), 'ensemble-size': e.get('size'),
        'perturb-variable': p.get('variable'), 'perturb-magnitude': p.get('magnitude'),
        'excluded-vars': e.get('excluded-vars')}
+bm = e.get('boundary-mask', False)
+if not isinstance(bm, bool):
+    fail(f"ensemble.boundary-mask must be true or false (got {bm!r})")
 missing = [k for k, v in out.items() if v in (None, '')]
 if missing:
     fail(f"missing value(s) for: {', '.join(missing)}")
 for k in ['spinup-duration', 'run-duration', 'perturb-magnitude']:
     if not isinstance(out[k], str):
         fail(f"{k} must be a quoted string (got {out[k]!r}; YAML turns unquoted durations like 1_00:00:00 into numbers)")
+out['boundary-mask'] = 'true' if bm else 'false'
 for k, v in out.items():
     v = str(v).strip()
     if '\n' in v:

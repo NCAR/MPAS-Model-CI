@@ -72,6 +72,7 @@ jobs:
       ect-perturb-variable: ${{ steps.ectcase.outputs.perturb-variable }}
       ect-perturb-magnitude: ${{ steps.ectcase.outputs.perturb-magnitude }}
       ect-excluded-vars: ${{ steps.ectcase.outputs.excluded-vars }}
+      ect-boundary-mask: ${{ steps.ectcase.outputs.boundary-mask }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -283,6 +284,7 @@ jobs:
         uses: ./.github/actions/run-perturb-mpas
         with:
           excluded-vars: ${{ needs.prepare.outputs.ect-excluded-vars }}
+          boundary-mask: ${{ needs.prepare.outputs.ect-boundary-mask }}
           perturb-magnitude: ${{ needs.prepare.outputs.ect-perturb-magnitude }}
           base-dir: base-case
           executable: ./atmosphere_model

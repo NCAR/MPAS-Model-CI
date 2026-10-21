@@ -29,6 +29,7 @@ cases:
       size: <n>                          # reference ensemble size (>= number of analysed variables, ~48 minimum)
       perturb: {variable: theta, magnitude: "1e-14"}   # initial-condition perturbation (double precision)
       excluded-vars: <path>              # file in the repo listing history variables PyCECT ignores
+      boundary-mask: true                # limited-area cases only (optional, default false); see below
     assets:
       summary: <file>.nc                 # ensemble summary in the ECT release
       restart: <file>.nc                 # spin-up restart in the ECT release (stored as <file>.nc.gz)
@@ -44,6 +45,14 @@ the names in `assets`, and test runs download them by the same names. Naming rul
 
 **External sources.** If a case recreates a case defined elsewhere, say where from (repository, commit, script) in a
 comment above it. It is a comment on purpose: CI does not read or run it.
+
+**Limited-area cases (`boundary-mask: true`).** In a limited-area run, the cells near the edge of the region (the
+relaxation and specified zones, `bdyMaskCell` > 0) are driven by the lateral boundary conditions, which are the same in
+every member, so they have almost no spread and dilute the means PyCECT compares (on the 120km CONUS region they are 44%
+of the cells). With `boundary-mask: true`, the trimming step sets the area weights (`areaCell`, `dvEdge`,
+`areaTriangle`) of those points to zero in the history files given to PyCECT, using the masks in the case's init file,
+so the means cover the interior only. Ensemble generation and tests trim the same way. This relies on PyCECT taking its
+weights from those variables (true for the pinned version); recheck it when `PYCECT_TAG` changes.
 
 ## Adding a case
 
