@@ -240,3 +240,10 @@ every field and the rules for adding or changing a case (each case is tied to a 
 changing what it runs means new asset names and regenerating). Each workflow resolves its case once in its config job
 (`resolve-ect-case` action) and passes the values on as inputs. Run a case by typing its name into the `ect-case` input of
 `ect-test.yml` (or `ect-ensemble-gen.yml` to build its reference).
+
+### BFB regression vs baseline (`bfb-regression.yml`)
+
+Dispatch-only. Builds `baseline-ref` and `test-ref` (gcc, double), runs each case in its `CASES` list with both builds and
+compares every history file bit for bit, like the NOAA/GSL `compare_run_testcases` scripts. Cases name a `data` entry from
+`.github/ect-cases.yml`, a namelist file shipped in that archive (`run-mpas` input `namelist-file`) and a rank count. First
+case: NOAA/GSL B1 on the `conus-120km` archive (4 ranks, 1 h, history every 12 min; ~13 s per run on Derecho).
