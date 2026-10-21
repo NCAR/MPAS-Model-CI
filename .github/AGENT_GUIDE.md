@@ -235,8 +235,8 @@ Workflows accept `mpas-repository` and `mpas-ref` inputs for testing upstream MP
 
 ### ECT cases (`.github/ect-cases.yml`)
 
-One table lists the ECT cases: `default` (used when a workflow's `ect-case` input is empty), `defaults` (shared values) and `cases`
-(per-case fields such as `summary-file`, `restart-file`, `resolution`, durations, perturbation; quote durations and magnitudes, YAML reads
-unquoted `1_00:00:00` as a number). Each workflow resolves its case once in its config job (`resolve-ect-case` action) and passes the
-values on as inputs. Run a case by typing its name into the `ect-case` input of `ect-test.yml` (or `ect-ensemble-gen.yml` to build its
-reference). A new case needs its own summary and restart assets in the ECT release. Results record the case in an `ect-case` column.
+`.github/ect-cases.yml` defines the ECT cases and the test-data archives (release tags). `.github/ECT_CASES.md` explains
+every field and the rules for adding or changing a case (each case is tied to a reference ensemble in the ECT release, so
+changing what it runs means new asset names and regenerating). Each workflow resolves its case once in its config job
+(`resolve-ect-case` action) and passes the values on as inputs. Run a case by typing its name into the `ect-case` input of
+`ect-test.yml` (or `ect-ensemble-gen.yml` to build its reference).
