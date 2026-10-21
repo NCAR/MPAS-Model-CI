@@ -5,9 +5,9 @@
 
 default: mesoscale_reference
 
-# Test data. These archives are NOT in this repository: they are release assets, downloadable from the Releases page
-# of DATA_REPOSITORY (ci-config.env), https://github.com/NCAR/MPAS-Model-CI/releases, as <tag>/<key>.tar.gz.
-# (.github/data/ is something else: small files kept in the repo, such as the ECT excluded-variables list.)
+# Test data: archives from https://github.com/NCAR/MPAS-Model-CI/releases (not files in this repo; .github/data/ is
+# something else). Each entry is <name>: {tag: <release tag>}: the file <name>.tar.gz in that release. Cases list the
+# entries they need by <name>. Example: 120km is 120km.tar.gz in release testdata-120km-v2.
 data:
   120km: {tag: testdata-120km-v2}   # global mesh x1.40962
   240km: {tag: testdata-240km-v3}   # global mesh x1.10242

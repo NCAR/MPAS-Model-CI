@@ -16,13 +16,13 @@ changing a case.
 ```yaml
 default: <case>              # used when a workflow's ect-case input is empty
 
-data:                        # test-data archives (release assets, not files in this repo)
-  <key>: {tag: <release tag>}            # archive <key>.tar.gz in release <tag>; optional `asset:` overrides the name
+data:                        # test-data archives, from https://github.com/NCAR/MPAS-Model-CI/releases
+  <name>: {tag: <release tag>}           # the file <name>.tar.gz in that release (optional `asset:` gives another file name)
 
 cases:
   <case>:
     description: <free text>
-    data: [<key>]                        # entries from `data`; the first is the base case directory
+    data: [<name>]                       # entries from `data`, by name; the first is the base case directory
     ensemble:
       spinup: "<D_HH:MM:SS>"             # unperturbed spin-up before members are perturbed (quote it)
       run: "<D_HH:MM:SS>"                # length of each perturbed member (quote it)
@@ -48,7 +48,7 @@ comment above it. It is a comment on purpose: CI does not read or run it.
 ## Adding a case
 
 1. **Data.** If the case needs files that are not listed under `data`, build a `.tar.gz`, publish it under a new
-   release tag (`gh release create <tag> <key>.tar.gz --repo NCAR/MPAS-Model-CI`) and add `<key>: {tag: <tag>}`.
+   release tag (`gh release create <tag> <name>.tar.gz --repo NCAR/MPAS-Model-CI`) and add `<name>: {tag: <tag>}`.
 2. **Case.** Copy an existing case, give it a descriptive name and new asset names, and describe it.
 3. **Reference ensemble.** Run "ECT Ensemble Generation" (Actions tab) with `ect-case` set to the new case. It builds
    the model, runs the spin-up and the ensemble, and publishes the case's summary and restart to the ECT release.
