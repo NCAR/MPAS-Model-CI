@@ -86,6 +86,9 @@ jobs:
         with:
           compiler: ${{ inputs.compiler }}
           core: atmosphere
+          make-flags: |
+            FFLAGS_ARRTEST=-O2 -g
+            GLOBTEST=*
           use-pio: ${{ inputs.io == 'pio' && 'true' || 'false' }}
           precision: ${{ inputs.precision }}
           log-file: build-atmosphere.log
@@ -102,6 +105,17 @@ jobs:
           use-pio: ${{ inputs.io == 'pio' && 'true' || 'false' }}
           precision: ${{ inputs.precision }}
           log-file: build-init_atmosphere.log
+
+      - name: SCRATCH array check
+        if: always()
+        shell: bash
+        run: |
+          for c in atmosphere init_atmosphere; do
+            L="build-${c}.log"
+            [ -f "$L" ] || continue
+            echo "::notice title=${c} build command::$(grep -m1 'Build command' "$L" | cut -c1-260)"
+            echo "::notice title=${c} clean command::$(grep -m1 'Clean command' "$L" | cut -c1-120)"
+          done
 
       - name: Summary
         if: always()

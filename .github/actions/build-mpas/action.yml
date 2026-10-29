@@ -30,7 +30,7 @@ inputs:
     required: false
     default: ''
   make-flags:
-    description: 'Extra make arguments for this build (e.g. "OPENMP=true"), added after the compiler defaults from ci-config.env'
+    description: 'Extra make arguments for this build, one per line (e.g. "OPENMP=true"), added after the compiler defaults from ci-config.env'
     required: false
     default: ''
   use-target-arch:
@@ -162,28 +162,39 @@ runs:
           fi
         fi
 
-        # Compiler defaults from ci-config.env (<FAMILY>_EXTRA_MAKE_FLAGS, family in
-        # upper case), then the make-flags input
+        # Extra make arguments are kept in arrays, so values are never re-split or
+        # expanded as globs. Compiler defaults come from ci-config.env
+        # (<FAMILY>_EXTRA_MAKE_FLAGS, family in upper case, space-separated); the
+        # make-flags input is one argument per line.
         FLAGS_VAR="${COMPILER_FAMILY^^}_EXTRA_MAKE_FLAGS"
-        EXTRA_MAKE_FLAGS="${!FLAGS_VAR}"
-        if [ -n "${INPUT_MAKE_FLAGS}" ]; then
-          EXTRA_MAKE_FLAGS="${EXTRA_MAKE_FLAGS:+${EXTRA_MAKE_FLAGS} }${INPUT_MAKE_FLAGS}"
-        fi
+        read -r -a EXTRA_FLAGS <<< "${!FLAGS_VAR}"
+        while IFS= read -r FLAG; do
+          if [ -n "${FLAG}" ]; then EXTRA_FLAGS+=("${FLAG}"); fi
+        done <<< "${INPUT_MAKE_FLAGS}"
 
         echo "  Make target: ${MAKE_TARGET}"
-        echo "  Extra make flags: ${EXTRA_MAKE_FLAGS:-<none>}"
+        echo "  Extra make flags: ${EXTRA_FLAGS[*]:-<none>}"
         echo "  Parallel jobs: ${MAKE_J_PROCS:-$(nproc)}"
 
-        PRECISION_FLAG=""
+        MAKE_ARGS=("${MAKE_TARGET}" "CORE=${{ inputs.core }}" "${EXTRA_FLAGS[@]}")
         if [ "${{ inputs.precision }}" = "double" ]; then
-          PRECISION_FLAG="PRECISION=double"
+          MAKE_ARGS+=("PRECISION=double")
+        fi
+        MAKE_ARGS+=(--jobs "${MAKE_J_PROCS:-$(nproc)}")
+        MAKE_CMD_ARR=(timeout "${{ inputs.build-timeout }}m" make "${MAKE_ARGS[@]}")
+        CLEAN_CMD_ARR=()
+        if [ -n "${{ inputs.clean-core }}" ]; then
+          CLEAN_CMD_ARR=(make clean "CORE=${{ inputs.clean-core }}")
         fi
 
+        # Printable (shell-quoted) forms of the commands, for the build log
+        MAKE_CMD="$(printf '%q ' "${MAKE_CMD_ARR[@]}")"
+        MAKE_CMD="${MAKE_CMD% }"
         CLEAN_CMD=""
-        if [ -n "${{ inputs.clean-core }}" ]; then
-          CLEAN_CMD="make clean CORE=${{ inputs.clean-core }}"
+        if [ "${#CLEAN_CMD_ARR[@]}" -gt 0 ]; then
+          CLEAN_CMD="$(printf '%q ' "${CLEAN_CMD_ARR[@]}")"
+          CLEAN_CMD="${CLEAN_CMD% }"
         fi
-        MAKE_CMD="timeout ${{ inputs.build-timeout }}m make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}"
 
         LOG_FILE="${{ inputs.log-file }}"
         set -o pipefail
@@ -196,10 +207,10 @@ runs:
         export COMPILER_FAMILY MAKE_TARGET ARCH CLEAN_CMD MAKE_CMD
         CORE="${{ inputs.core }}" USE_PIO="${{ inputs.use-pio }}" PRECISION="${{ inputs.precision }}" \
           bash "${PRINT_ENV}" | tee "${LOG_FILE:-/dev/null}"
-        if [ -n "${CLEAN_CMD}" ]; then
-          ${CLEAN_CMD} 2>&1 | tee -a "${LOG_FILE:-/dev/null}"
+        if [ "${#CLEAN_CMD_ARR[@]}" -gt 0 ]; then
+          "${CLEAN_CMD_ARR[@]}" 2>&1 | tee -a "${LOG_FILE:-/dev/null}"
         fi
-        ${MAKE_CMD} 2>&1 | tee -a "${LOG_FILE:-/dev/null}"
+        "${MAKE_CMD_ARR[@]}" 2>&1 | tee -a "${LOG_FILE:-/dev/null}"
 
         echo "executable=$(pwd)/${EXE}" >> "$GITHUB_OUTPUT"
 
