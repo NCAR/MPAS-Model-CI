@@ -17,6 +17,10 @@ inputs:
     description: 'Floating-point precision (single or double)'
     required: false
     default: 'single'
+  debug:
+    description: 'Debug build (DEBUG=true: -O0, bounds/pointer checks, FPE traps; flags come from the Makefile target)'
+    required: false
+    default: 'false'
   build-timeout:
     description: 'Build timeout in minutes'
     required: false
@@ -88,6 +92,7 @@ runs:
         echo "  USE_PIO2: ${USE_PIO2}"
         echo "  OPENACC: ${OPENACC:-false}"
         echo "  PRECISION: ${{ inputs.precision }}"
+        echo "  DEBUG: ${{ inputs.debug }}"
         
         # Settings from .github/ci-config.env — edit that file to change targets/workarounds
         CI_CONFIG="${GITHUB_WORKSPACE}/.github/ci-config.env"
@@ -124,8 +129,13 @@ runs:
           PRECISION_FLAG="PRECISION=double"
         fi
 
+        DEBUG_FLAG=""
+        if [ "${{ inputs.debug }}" = "true" ]; then
+          DEBUG_FLAG="DEBUG=true"
+        fi
+
         timeout ${{ inputs.build-timeout }}m \
-          make ${MAKE_TARGET} CORE=atmosphere ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}
+          make ${MAKE_TARGET} CORE=atmosphere ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} ${DEBUG_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}
         
         # Set output
         echo "executable=$(pwd)/atmosphere_model" >> $GITHUB_OUTPUT

@@ -1,0 +1,146 @@
+# Reusable workflow: full-debug build + short run, checking only for compile errors,
+# segfaults/aborts, and NaNs. Output values are not compared.
+#
+# Builds once (DEBUG=true), then runs one job per entry in `namelist_overrides`
+# in parallel. Called by e.g. debug-gcc.yml.
+
+name: _test-debug
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler family (gcc, nvhpc, oneapi)'
+        required: true
+        type: string
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: false
+        type: string
+        default: 'mpich'
+      namelist_overrides:
+        description: >
+          JSON array of runs, e.g. [{"id":"conv","overrides":"config_physics_suite='convection_permitting'"}].
+          `id` is a slug; `overrides` is config_x=value lines (or ';'-separated) applied on top of
+          the archive's namelist.atmosphere. Default: one run with the archive namelist.
+        required: false
+        type: string
+        default: '[{"id":"default","overrides":""}]'
+      resolution:
+        description: 'Test case resolution'
+        required: false
+        type: string
+        default: '240km'
+      run-duration:
+        description: 'Model run duration (D_HH:MM:SS). Default = 20 steps at config_dt=1200s'
+        required: false
+        type: string
+        default: '0_06:40:00'
+      precision:
+        description: 'Floating-point precision (single or double)'
+        required: false
+        type: string
+        default: 'single'
+      num-ranks:
+        description: 'MPI ranks per run'
+        required: false
+        type: string
+        default: '4'
+      run-timeout:
+        description: 'Run timeout in minutes (debug builds are slow)'
+        required: false
+        type: string
+        default: '30'
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+      runs: ${{ steps.parse.outputs.runs }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+      - name: Validate namelist_overrides
+        id: parse
+        shell: bash
+        env:
+          RUNS_JSON: ${{ inputs.namelist_overrides }}
+        run: |
+          set -euo pipefail
+          echo "${RUNS_JSON}" | jq -e 'type == "array" and length > 0 and all(.[]; has("id") and has("overrides"))' >/dev/null \
+            || { echo "::error::namelist_overrides must be a non-empty JSON array of {id, overrides}"; exit 1; }
+          echo "${RUNS_JSON}" | jq -e 'all(.[]; .id | test("^[a-zA-Z0-9._-]+$"))' >/dev/null \
+            || { echo "::error::id must match ^[a-zA-Z0-9._-]+$"; exit 1; }
+          echo "${RUNS_JSON}" | jq -e '([.[].id] | length) == ([.[].id] | unique | length)' >/dev/null \
+            || { echo "::error::ids must be unique"; exit 1; }
+          echo "runs=$(echo "${RUNS_JSON}" | jq -c .)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: config
+    name: Build (${{ inputs.compiler }}, ${{ inputs.mpi }}, debug)
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          submodules: 'true'
+          persist-credentials: false
+      - uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          use-pio: 'false'
+          precision: ${{ inputs.precision }}
+          debug: 'true'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: exe-debug-${{ inputs.compiler }}-${{ inputs.mpi }}
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: [config, build]
+    name: Run ${{ matrix.run.id }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        run: ${{ fromJSON(needs.config.outputs.runs) }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: exe-debug-${{ inputs.compiler }}-${{ inputs.mpi }}
+      - name: Run MPAS-A
+        id: run
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          resolution: ${{ inputs.resolution }}
+          num-procs: ${{ inputs.num-ranks }}
+          mpi-impl: ${{ inputs.mpi }}
+          run-duration: ${{ inputs.run-duration }}
+          run-timeout: ${{ inputs.run-timeout }}
+          namelist-overrides: ${{ matrix.run.overrides }}
+          working-dir: run-${{ matrix.run.id }}
+      - name: Check for NaNs
+        if: always()
+        uses: ./.github/actions/check-mpas-nans
+        with:
+          run-dir: run-${{ matrix.run.id }}

@@ -1,0 +1,21 @@
+# Debug test: GNU + MPICH, DEBUG=true, 240km, ~20 timesteps.
+# Fails on compile errors, segfaults/aborts, or NaNs. Output values are not compared.
+# Add runs by appending {id, overrides} entries (config_x=value, ';'-separated).
+
+name: "Debug: GNU+MPICH"
+
+on:
+  workflow_dispatch:
+  # While developing, add the feature branch here; remove before merging.
+  push:
+    branches: [feature-ci-debug-test]
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-debug.yml
+    with:
+      compiler: gcc
+      mpi: mpich
+      namelist_overrides: >-
+        [{"id":"mesoscale","overrides":"config_physics_suite='mesoscale_reference'"},
+         {"id":"convection-permitting","overrides":"config_physics_suite='convection_permitting'"}]

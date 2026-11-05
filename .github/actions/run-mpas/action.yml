@@ -14,6 +14,14 @@ inputs:
     description: 'Run duration (format: D_HH:MM:SS). If empty, uses the namelist default from the test case archive.'
     required: false
     default: ''
+  namelist-overrides:
+    description: >
+      Extra namelist options applied on top of the archive's namelist.atmosphere.
+      One `config_name=value` per line (or `;`-separated); values are written
+      verbatim, so quote strings (config_physics_suite='convection_permitting').
+      Existing keys are replaced; unknown keys are added to &physics.
+    required: false
+    default: ''
   restart-interval:
     description: 'Restart output interval (format: D_HH:MM:SS). If empty, uses the streams.atmosphere default.'
     required: false
@@ -105,7 +113,13 @@ runs:
     - name: Configure namelist overrides
       shell: bash
       working-directory: ${{ steps.config.outputs.workdir }}
+      env:
+        NAMELIST_OVERRIDES: ${{ inputs.namelist-overrides }}
       run: |
+        if [ -n "${NAMELIST_OVERRIDES}" ]; then
+          "${GITHUB_WORKSPACE}/.github/scripts/apply-namelist-overrides.sh" namelist.atmosphere "${NAMELIST_OVERRIDES}"
+        fi
+
         if [ -n "${{ inputs.run-duration }}" ]; then
           DURATION="${{ inputs.run-duration }}"
           sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${DURATION}'/" namelist.atmosphere

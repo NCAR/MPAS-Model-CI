@@ -1,0 +1,46 @@
+name: 'Check MPAS NaNs'
+description: 'Fail if MPAS logs or NetCDF output in a run directory contain NaNs'
+
+inputs:
+  run-dir:
+    description: 'Run directory holding log.atmosphere.* and output files'
+    required: true
+  output-pattern:
+    description: 'Space-separated globs of NetCDF files to scan (relative to run-dir)'
+    required: false
+    default: 'history.*.nc diag.*.nc'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Scan logs and output for NaNs
+      shell: bash
+      env:
+        RUN_DIR: ${{ inputs.run-dir }}
+        PATTERNS: ${{ inputs.output-pattern }}
+        SCRIPT: ${{ github.action_path }}/check_nans.py
+      run: |
+        [ -d "${RUN_DIR}" ] || { echo "::error::${RUN_DIR} does not exist"; exit 1; }
+        cd "${RUN_DIR}"
+        [ -f /container/config_env.sh ] && source /container/config_env.sh
+        FAIL=0
+
+        if grep -nEi '(^|[^A-Za-z])nans?([^A-Za-z]|$)' log.atmosphere.* 2>/dev/null | head -20 | grep .; then
+          echo "::error::NaN found in MPAS logs"
+          FAIL=1
+        fi
+
+        shopt -s nullglob
+        FILES=( $PATTERNS )
+        if [ ${#FILES[@]} -eq 0 ]; then
+          echo "::error::No output files matching '${PATTERNS}' in ${RUN_DIR}"
+          exit 1
+        fi
+
+        python3 -c 'import netCDF4, numpy' 2>/dev/null \
+          || pip install --quiet netCDF4 numpy 2>/dev/null \
+          || { eval "$(conda shell.bash hook)" && conda activate base \
+               && (python3 -c 'import netCDF4' 2>/dev/null || conda install -y -q netcdf4 numpy); }
+        python3 "${SCRIPT}" "${FILES[@]}" || FAIL=1
+
+        exit ${FAIL}

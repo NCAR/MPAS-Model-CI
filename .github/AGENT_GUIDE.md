@@ -26,12 +26,15 @@ This is `NCAR/MPAS-Model-CI`, a fork of `MPAS-Dev/MPAS-Model`. The MPAS source c
 │   ├── run-perturb-mpas/        # Runs perturbed ensemble members for ECT
 │   │   ├── perturb_theta.py     # IC perturbation (theta field)
 │   │   └── trim_history.py      # Trims history files for artifact upload
+│   ├── check-mpas-nans/         # Fails on NaNs in MPAS logs / NetCDF output
 │   ├── print-mpas-logs/         # Dumps log.atmosphere.* into ::group:: blocks
 │   ├── validate-ect/            # PyCECT validation
 │   └── ect-summary/             # Consolidated ECT results table
 └── workflows/
     ├── _test-compiler.yml       # Reusable: CPU build + ECT validation
     ├── _test-gpu.yml            # Reusable: GPU build + ECT validation (CIRRUS)
+    ├── _test-debug.yml          # Reusable: DEBUG=true build + short runs, NaN/crash check only
+    ├── debug-gcc.yml            # Caller: GNU+MPICH debug test (dispatch-only)
     ├── test-gcc-mpich.yml       # Caller: GNU+MPICH (auto on push/PR)
     ├── test-gcc-openmpi.yml     # Caller: GNU+OpenMPI (dispatch-only)
     ├── test-intel-mpich.yml     # Caller: Intel+MPICH (auto on push/PR)
@@ -99,6 +102,10 @@ Each compiler+MPI combination has a thin caller workflow that invokes a reusable
 ### _test-gpu.yml — Reusable GPU Workflow
 
 Same structure as `_test-compiler.yml` but builds with OpenACC (`openacc: 'true'`) and runs on `CIRRUS-4x8-gpu` self-hosted runners.
+
+### _test-debug.yml — Reusable Debug Workflow
+
+Builds once with `DEBUG=true` (Makefile debug flags: `-O0`, `-fcheck=all`, FPE traps), then runs one parallel job per entry of the `namelist_overrides` input (JSON array of `{id, overrides}`; `overrides` is `config_x=value` lines applied by `.github/scripts/apply-namelist-overrides.sh`, values verbatim, unknown keys added to `&physics`). Defaults: 240km, `0_06:40:00` (20 steps at `config_dt=1200`), 4 ranks. Passes on exit code 0 and no NaNs (`check-mpas-nans`); output values are never compared. Add a scenario by appending an entry in the caller (`debug-gcc.yml`).
 
 ### compile-nvhpc-cuda-mpich.yml — CUDA toolchain (compile-only)
 
