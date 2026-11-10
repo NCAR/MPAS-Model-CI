@@ -6,7 +6,7 @@ name: "BUILD: Intel OneAPI + MPICH (CPU)"
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, scratch/gnu-rename]
   pull_request:
     branches: [develop]
 
