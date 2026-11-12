@@ -1,0 +1,89 @@
+# Reusable workflow: build the atmosphere core, then check the executable in a
+# separate job (it links cleanly). Example of the build -> artifact -> test pattern.
+# Build and check use the same container image, so library paths match.
+
+name: _test-exe-check
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      compiler:
+        description: 'Compiler family (gcc, nvhpc, oneapi)'
+        required: true
+        type: string
+      mpi:
+        description: 'MPI implementation (mpich, openmpi)'
+        required: true
+        type: string
+      precision:
+        description: 'Floating-point precision (single, double)'
+        required: false
+        type: string
+        default: 'single'
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: ${{ inputs.compiler }}
+          mpi: ${{ inputs.mpi }}
+
+  build:
+    needs: config
+    name: Build atmosphere (${{ inputs.compiler }}, ${{ inputs.mpi }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          submodules: 'true'
+          persist-credentials: false
+      - name: Build atmosphere
+        id: atmosphere
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: ${{ inputs.compiler }}
+          core: atmosphere
+          precision: ${{ inputs.precision }}
+      - name: Upload executable
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: exe-check-${{ inputs.compiler }}-${{ inputs.mpi }}
+          path: atmosphere_model
+          retention-days: 1
+
+  check:
+    needs: [config, build]
+    name: Check executable (${{ inputs.compiler }}, ${{ inputs.mpi }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Download executable
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: exe-check-${{ inputs.compiler }}-${{ inputs.mpi }}
+      - uses: ./.github/actions/check-exe
+        with:
+          executable: ./atmosphere_model

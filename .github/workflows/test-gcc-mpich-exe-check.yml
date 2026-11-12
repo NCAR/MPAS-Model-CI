@@ -1,0 +1,18 @@
+# TEST: GNU + MPICH executable check (CPU)
+# Builds the atmosphere core and checks that it links cleanly.
+
+name: "TEST: GNU + MPICH executable check (CPU)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, example/c-exe-check]  # TEMP: remove example branch before merge
+  pull_request:
+    branches: [develop]
+
+jobs:
+  test:
+    uses: ./.github/workflows/_test-exe-check.yml
+    with:
+      compiler: gcc
+      mpi: mpich

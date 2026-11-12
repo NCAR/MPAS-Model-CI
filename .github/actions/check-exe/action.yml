@@ -1,0 +1,30 @@
+name: 'Check Executable'
+description: 'Check that an MPAS executable exists and all its shared libraries resolve'
+
+inputs:
+  executable:
+    description: 'Path to the executable'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check executable
+      shell: bash
+      env:
+        EXE: ${{ inputs.executable }}
+      run: |
+        if [ ! -f "${EXE}" ]; then
+          echo "::error::${EXE} not found"
+          exit 1
+        fi
+        chmod +x "${EXE}"   # artifact download drops the execute bit
+        ls -la "${EXE}"
+        file "${EXE}"
+        MISSING="$(ldd "${EXE}" | grep 'not found' || true)"
+        if [ -n "${MISSING}" ]; then
+          echo "::error::Unresolved shared libraries:"
+          echo "${MISSING}"
+          exit 1
+        fi
+        echo "All shared libraries resolve."
