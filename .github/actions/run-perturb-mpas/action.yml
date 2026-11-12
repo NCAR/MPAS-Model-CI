@@ -33,6 +33,18 @@ inputs:
     description: 'MPI implementation (openmpi, mpich)'
     required: false
     default: 'openmpi'
+  excluded-vars:
+    description: 'Path (relative to the repo root) of the file listing history variables to drop before PyCECT (from resolve-ect-case)'
+    required: true
+  perturb-magnitude:
+    description: 'Magnitude of the initial-condition perturbation (from resolve-ect-case)'
+    required: true
+  boundary-mask:
+    description: >
+      Limited-area cases (from resolve-ect-case): zero the area weights of lateral-boundary cells in the trimmed history
+      files (bdyMask* from the case's init file), so PyCECT averages over the interior only. Requires trim. Default false.
+    required: false
+    default: 'false'
   gpu-aware-mpi:
     description: >
       Use GPU-aware MPI halo exchanges (config_gpu_aware_mpi = .true. in each member's namelist plus the MPI
@@ -124,8 +136,29 @@ runs:
         fi
 
         EXCLUDE_FILE=""
-        if [ -n "${ECT_EXCLUDED_VARS}" ]; then
-          EXCLUDE_FILE="${GITHUB_WORKSPACE}/${ECT_EXCLUDED_VARS}"
+        EXCLUDED_VARS="${{ inputs.excluded-vars }}"
+        PERTURB_MAGNITUDE="${{ inputs.perturb-magnitude }}"
+        if [ -z "${PERTURB_MAGNITUDE}" ]; then
+          echo "::error::perturb-magnitude is required (resolve it with the resolve-ect-case action)"
+          exit 1
+        fi
+        if [ -n "${EXCLUDED_VARS}" ]; then
+          EXCLUDE_FILE="${GITHUB_WORKSPACE}/${EXCLUDED_VARS}"
+        fi
+
+        MASK_ARGS=()
+        if [ "${{ inputs.boundary-mask }}" = "true" ]; then
+          if [ "${TRIM}" != "true" ] || [ ! -f "${EXCLUDE_FILE}" ]; then
+            echo "::error::boundary-mask needs trimmed history (trim=true and an excluded-vars file)"
+            exit 1
+          fi
+          MASK_FILE=$(ls "${BASEDIR}"/init.nc "${BASEDIR}"/*init*.nc 2>/dev/null | head -1)
+          if [ -z "${MASK_FILE}" ]; then
+            echo "::error::boundary-mask: no init file in ${BASEDIR} to read bdyMask* from"
+            exit 1
+          fi
+          MASK_ARGS=(--boundary-mask-file "$(realpath "${MASK_FILE}")")
+          echo "Boundary mask from ${MASK_FILE}"
         fi
 
         mkdir -p "${OUTDIR}"
@@ -173,7 +206,7 @@ runs:
 
           echo "[$(date +%H:%M:%S)] Perturbing theta (seed=${MEMBER})..."
           python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/perturb_theta.py \
-            "${PERTURB_FILE}" --seed ${MEMBER} --magnitude ${ECT_PERTURB_MAGNITUDE}
+            "${PERTURB_FILE}" --seed ${MEMBER} --magnitude ${PERTURB_MAGNITUDE}
 
           if [ "${VERBOSE}" = "true" ]; then
             echo "  Restart MD5: $(md5sum "${PERTURB_FILE}" | cut -d' ' -f1)"
@@ -261,7 +294,7 @@ runs:
               python3 ${GITHUB_WORKSPACE}/.github/actions/run-perturb-mpas/trim_history.py \
                 "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc" \
                 --tslice ${TSLICE} \
-                --exclude-file "${EXCLUDE_FILE}"
+                --exclude-file "${EXCLUDE_FILE}" "${MASK_ARGS[@]}"
               echo "[$(date +%H:%M:%S)] Saved trimmed history for member ${MEMBER_ID}"
             else
               cp "${HIST_FILE}" "../${OUTDIR}/history.${MEMBER_ID}.nc"

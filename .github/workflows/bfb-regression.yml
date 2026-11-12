@@ -1,0 +1,175 @@
+# BFB regression against a baseline version, like the NOAA/GSL test matrix (barlage/mpas_testcase utils/compare_run_*):
+# build the baseline and the test code, run each case with both, and check that every history file is bit-for-bit
+# identical. A difference means the change alters model answers; that may be intended, so read the summary.
+#
+# Cases are listed in `cases` below: data (a key under `data` in .github/ect-cases.yml), the namelist file from that
+# archive, and the MPI rank count (needs a matching graph.info.part.<ranks> in the archive).
+
+name: "BFB regression vs baseline (NOAA/GSL cases)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline-ref:
+        description: 'Git ref (branch, tag or SHA) of the baseline code'
+        required: true
+        default: 'master'
+      test-ref:
+        description: 'Git ref of the code to test. Empty = the ref this workflow runs on.'
+        required: false
+        default: ''
+      mpas-repository:
+        description: 'MPAS source repo for both builds (e.g. MPAS-Dev/MPAS-Model). Empty = this repo.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  # NOAA/GSL case B1 (barlage/mpas_testcase@3c28890 run_case/run_mpas_case_B1.sh): CONUS 120km, GFS 2023-03-10_15,
+  # convection_permitting + MYNN options, 1 h, history every 12 min.
+  CASES: >-
+    [{"id":"B1","data":"conus-120km","namelist":"namelist.atmosphere.convection_permitting","ranks":4}]
+
+jobs:
+  config:
+    name: Resolve Config
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.container.outputs.image }}
+      cases: ${{ steps.cases.outputs.cases }}
+      runs: ${{ steps.cases.outputs.runs }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+      - uses: ./.github/actions/resolve-container
+        id: container
+        with:
+          compiler: gcc
+          mpi: mpich
+      - name: Case matrix
+        id: cases
+        shell: bash
+        run: |
+          echo "cases=${CASES}" >> "$GITHUB_OUTPUT"
+          echo "runs=$(echo "${CASES}" | jq -c '[.[] as $c | ("baseline","test") | $c + {build: .}]')" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: config
+    strategy:
+      matrix:
+        build: [baseline, test]
+    name: Build (${{ matrix.build }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.mpas-repository || github.repository }}
+          ref: ${{ matrix.build == 'baseline' && inputs.baseline-ref || inputs.test-ref }}
+          submodules: 'true'
+      # Build the chosen ref's model source with this run's CI infrastructure.
+      - uses: actions/checkout@v5
+        with:
+          path: _ci
+          sparse-checkout: .github
+      - name: Overlay CI infrastructure
+        shell: bash
+        run: |
+          echo "commit=$(git rev-parse HEAD)"
+          rm -rf .github && cp -r _ci/.github . && rm -rf _ci
+      - name: Build MPAS-A (double precision)
+        uses: ./.github/actions/build-mpas
+        with:
+          compiler: gcc
+          precision: double
+      - uses: actions/upload-artifact@v6
+        with:
+          name: exe-${{ matrix.build }}
+          path: atmosphere_model
+          retention-days: 1
+
+  run:
+    needs: [config, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.runs) }}
+    name: Run (${{ matrix.id }}, ${{ matrix.build }})
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.config.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+      - uses: actions/download-artifact@v7
+        with:
+          name: exe-${{ matrix.build }}
+      - name: Run MPAS-A
+        uses: ./.github/actions/run-mpas
+        with:
+          executable: ./atmosphere_model
+          resolution: ${{ matrix.data }}
+          namelist-file: ${{ matrix.namelist }}
+          num-procs: '${{ matrix.ranks }}'
+          mpi-impl: mpich
+          working-dir: run-${{ matrix.id }}-${{ matrix.build }}
+          run-timeout: '20'
+      - uses: actions/upload-artifact@v6
+        with:
+          name: history-${{ matrix.id }}-${{ matrix.build }}
+          path: run-${{ matrix.id }}-${{ matrix.build }}/history.*.nc
+          retention-days: 1
+
+  compare:
+    needs: [config, run]
+    if: ${{ !cancelled() && needs.run.result == 'success' }}
+    name: Compare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: history-*
+          path: out
+      - name: Compare history files
+        shell: bash
+        env:
+          CASE_IDS: ${{ needs.config.outputs.cases }}
+        run: |
+          pip install --quiet netCDF4 numpy
+          echo "## BFB regression: baseline \`${{ inputs.baseline-ref }}\` vs test \`${{ inputs.test-ref || github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| case | history file | result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          FAIL=0
+          for ID in $(echo "${CASE_IDS}" | jq -r '.[].id'); do
+            BASE="out/history-${ID}-baseline"; TEST="out/history-${ID}-test"
+            FILES=$(cd "${BASE}" 2>/dev/null && ls history.*.nc || true)
+            if [ -z "${FILES}" ]; then
+              echo "| ${ID} | (none) | :x: no baseline history files |" >> "$GITHUB_STEP_SUMMARY"; FAIL=$((FAIL + 1)); continue
+            fi
+            for F in ${FILES}; do
+              if [ ! -f "${TEST}/${F}" ]; then
+                R=":x: missing in test"; FAIL=$((FAIL + 1))
+              elif cmp -s "${BASE}/${F}" "${TEST}/${F}"; then
+                R=":white_check_mark: byte-identical"
+              else
+                set +e
+                OUT=$(python3 .github/scripts/compare-bfb-nc.py "${BASE}/${F}" "${TEST}/${F}"); RC=$?
+                set -e
+                if [ ${RC} -eq 0 ]; then R=":white_check_mark: data-identical"; else R=":x: ${OUT#*$'\t'}"; FAIL=$((FAIL + 1)); fi
+              fi
+              echo "| ${ID} | ${F} | ${R} |" >> "$GITHUB_STEP_SUMMARY"
+            done
+          done
+          if [ ${FAIL} -gt 0 ]; then
+            echo "::error::${FAIL} history file(s) differ from the baseline (the change alters model answers)"
+            exit 1
+          fi

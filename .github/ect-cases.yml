@@ -1,0 +1,26 @@
+# ECT cases: what the Ensemble Consistency Test runs, read by .github/actions/resolve-ect-case.
+#
+# READ .github/ECT_CASES.md BEFORE EDITING. Every case is tied to a reference ensemble in the ECT release; changing
+# what a case runs invalidates it. That file explains every field and how to add or change a case.
+
+default: mesoscale_reference
+
+# Test data: each entry is the file <name>.tar.gz in release <tag> at https://github.com/NCAR/MPAS-Model-CI/releases.
+data:
+  120km: {tag: testdata-120km-v2}   # global mesh x1.40962
+  240km: {tag: testdata-240km-v3}   # global mesh x1.10242
+  conus-120km: {tag: testdata-conus-120km-v1}   # CONUS limited area, 2971 cells; NOAA/GSL test cases (README inside)
+
+cases:
+  mesoscale_reference:
+    description: 120km global mesh, mesoscale_reference suite as shipped in the archive's namelist
+    data: [120km]
+    ensemble:
+      spinup: "1_00:00:00"
+      run: "0_02:36:00"
+      size: 200
+      perturb: {variable: theta, magnitude: "1e-14"}
+      excluded-vars: .github/data/ect_excluded_vars.txt
+    assets:
+      summary: mpas_ect_summary_120km_mesoscale_reference.nc
+      restart: 120km-mesoscale_reference-spinup-restart.nc

@@ -36,7 +36,7 @@ on:
           - single
           - double
       resolution:
-        description: Test case resolution (see RELEASE_TESTDATA_* in ci-config.env)
+        description: Test case resolution (a key under `data` in .github/ect-cases.yml)
         required: false
         default: '120km'
         type: string

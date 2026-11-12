@@ -38,6 +38,12 @@ inputs:
     description: 'Fail on non-zero exit code (default true). Set false when gfortran IEEE warnings produce non-zero exit but model output is valid.'
     required: false
     default: 'true'
+  namelist-file:
+    description: >
+      Name of a namelist file shipped in the test-data archive (e.g. namelist.atmosphere.convection_permitting) to use as
+      namelist.atmosphere for this run. Empty = the archive's namelist.atmosphere.
+    required: false
+    default: ''
   mpi-run-flags:
     description: >
       Extra flags appended to the mpirun invocation (e.g. '-bind-to core').
@@ -106,6 +112,16 @@ runs:
       shell: bash
       working-directory: ${{ steps.config.outputs.workdir }}
       run: |
+        if [ -n "${{ inputs.namelist-file }}" ]; then
+          if [ ! -f "${{ inputs.namelist-file }}" ]; then
+            echo "::error::namelist-file ${{ inputs.namelist-file }} is not in the test-data archive"
+            ls namelist.atmosphere* || true
+            exit 1
+          fi
+          cp "${{ inputs.namelist-file }}" namelist.atmosphere
+          echo "Using ${{ inputs.namelist-file }} as namelist.atmosphere"
+        fi
+
         if [ -n "${{ inputs.run-duration }}" ]; then
           DURATION="${{ inputs.run-duration }}"
           sed -i "s/config_run_duration = '[^']*'/config_run_duration = '${DURATION}'/" namelist.atmosphere
