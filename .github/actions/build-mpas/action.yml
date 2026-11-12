@@ -17,6 +17,10 @@ inputs:
     description: 'Enable OpenACC (true/false)'
     required: false
     default: 'false'
+  openmp:
+    description: 'Enable OpenMP threading (true/false)'
+    required: false
+    default: 'false'
   precision:
     description: 'Floating-point precision (single or double)'
     required: false
@@ -112,6 +116,7 @@ runs:
         echo "  PNETCDF: ${PNETCDF:-not set}"
         echo "  PIO: ${PIO:-not set}"
         echo "  OPENACC: ${OPENACC:-false}"
+        echo "  OPENMP: ${{ inputs.openmp }}"
         echo "  PRECISION: ${{ inputs.precision }}"
 
         # Settings from .github/ci-config.env — edit that file to change targets/workarounds
@@ -171,11 +176,16 @@ runs:
           PRECISION_FLAG="PRECISION=double"
         fi
 
+        OPENMP_FLAG=""
+        if [ "${{ inputs.openmp }}" = "true" ]; then
+          OPENMP_FLAG="OPENMP=true"
+        fi
+
         CLEAN_CMD=""
         if [ -n "${{ inputs.clean-core }}" ]; then
           CLEAN_CMD="make clean CORE=${{ inputs.clean-core }}"
         fi
-        MAKE_CMD="timeout ${{ inputs.build-timeout }}m make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}"
+        MAKE_CMD="timeout ${{ inputs.build-timeout }}m make ${MAKE_TARGET} CORE=${{ inputs.core }} ${EXTRA_MAKE_FLAGS} ${PRECISION_FLAG} ${OPENMP_FLAG} --jobs ${MAKE_J_PROCS:-$(nproc)}"
 
         LOG_FILE="${{ inputs.log-file }}"
         set -o pipefail
@@ -186,7 +196,7 @@ runs:
           exit 1
         fi
         export COMPILER_FAMILY MAKE_TARGET ARCH CLEAN_CMD MAKE_CMD
-        CORE="${{ inputs.core }}" USE_PIO="${{ inputs.use-pio }}" PRECISION="${{ inputs.precision }}" \
+        CORE="${{ inputs.core }}" USE_PIO="${{ inputs.use-pio }}" PRECISION="${{ inputs.precision }}" OPENMP="${{ inputs.openmp }}" \
           bash "${PRINT_ENV}" | tee "${LOG_FILE:-/dev/null}"
         if [ -n "${CLEAN_CMD}" ]; then
           ${CLEAN_CMD} 2>&1 | tee -a "${LOG_FILE:-/dev/null}"

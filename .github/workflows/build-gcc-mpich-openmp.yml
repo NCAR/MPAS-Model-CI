@@ -1,0 +1,19 @@
+# BUILD: GNU + MPICH + OpenMP (CPU)
+# Builds the atmosphere and init_atmosphere cores with SMIOL and OpenMP.
+
+name: "BUILD: GNU + MPICH + OpenMP (CPU)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, example/b-openmp-build]  # TEMP: remove example branch before merge
+  pull_request:
+    branches: [develop]
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build-compiler.yml
+    with:
+      compiler: gcc
+      mpi: mpich
+      openmp: 'true'

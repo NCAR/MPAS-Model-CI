@@ -8,6 +8,7 @@
 #   CORE             atmosphere or init_atmosphere
 #   USE_PIO          true or false
 #   PRECISION        single or double
+#   OPENMP           true or false
 #   ARCH             NVHPC target arch flag that was applied (empty = none)
 #   CLEAN_CMD        clean command run before the build (empty = none)
 #   MAKE_CMD         the build command
@@ -45,6 +46,7 @@ else
   echo "I/O layer:       SMIOL (in-tree)"
 fi
 echo "Precision:       ${PRECISION}"
+echo "OpenMP:          ${OPENMP:-false}"
 echo "Container OS:    $( (. /etc/os-release && echo "${PRETTY_NAME}") 2>/dev/null || echo unknown)"
 if [ "${COMPILER_FAMILY}" = "nvhpc" ]; then
   if [ -n "${ARCH}" ]; then
